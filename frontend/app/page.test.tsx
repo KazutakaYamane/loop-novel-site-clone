@@ -1,3 +1,4 @@
+// 既存テストの意図: 初期表示の内容を確かめる
 import { render, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import Home from "./page";
