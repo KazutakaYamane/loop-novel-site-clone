@@ -1,0 +1,7 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^PHPDoc tag @return with type int is incompatible with native type string\.$#'
+			identifier: return.phpDocType
+			count: 1
+			path: app/Support/ChapterLabel.php
