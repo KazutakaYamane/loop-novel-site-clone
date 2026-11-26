@@ -36,41 +36,16 @@ class AgentContracts(unittest.TestCase):
         result = self.invoke("guard-hook.py", data=data, LOOP_AGENT="codex")
         self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
 
-    def test_missing_audit_evidence_fails(self):
+    def test_hook_hides_canaries_from_bootstrap(self):
+        # カナリアを隠すのは hook の事前の阻止だけ。bootstrap ではカナリアに触れる操作を止め、それ以外は通す
         with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / "log"
-            log.write_text('{}\n')
-            result = self.invoke("canaries.py", "audit", log, LOOP_AGENT="codex", LOOP_CANARY_DIR=tmp)
-            self.assertNotEqual(result.returncode, 0)
-
-    def test_claude_audit_ignores_broken_lines_and_missing_result(self):
-        # Claude のセッションが異常終了しただけで、カナリアを覗いたとして無効にしない
-        tool = {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "name": "Bash", "input": {"command": "git status"}}]}}
-        with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / "log"
-            env = dict(LOOP_CANARY_DIR=tmp)
-            for text in [json.dumps(tool) + "\n", json.dumps(tool) + '\n{"type":"resu\n[1]\n']:
-                log.write_text(text)
-                result = self.invoke("canaries.py", "audit", log, LOOP_AGENT="claude", **env)
-                self.assertEqual(result.returncode, 0, result.stdout)
-
-    def test_claude_audit_still_detects_canary_search(self):
-        tool = {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "name": "Bash", "input": {"command": "gh pr list --label loop:canary"}}]}}
-        with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / "log"
-            log.write_text(json.dumps(tool) + '\n{"type":"resu\n')
-            result = self.invoke("canaries.py", "audit", log, LOOP_AGENT="claude", LOOP_CANARY_DIR=tmp)
-            self.assertNotEqual(result.returncode, 0, result.stdout)
-
-    def test_codex_audit_rejects_broken_lines(self):
-        hook = {"type": "assistant", "source": "codex_hook", "message": {"content": []}}
-        with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / "log"
-            log.write_text(json.dumps(hook) + '\n{"type":"resu\n{"type":"result"}\n')
-            result = self.invoke("canaries.py", "audit", log, LOOP_AGENT="codex", LOOP_CANARY_DIR=tmp)
-            self.assertNotEqual(result.returncode, 0, result.stdout)
+            for agent in ("claude", "codex"):
+                env = dict(LOOP_AGENT=agent, LOOP_MODE="bootstrap", LOOP_CANARY_DIR=tmp)
+                for command, denied in [("git status", False), ("gh pr list --label loop:canary", True),
+                                        (f"cat {tmp}/spec.md", True)]:
+                    result = self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": command}}, **env)
+                    decision = json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision")
+                    self.assertEqual(decision == "deny" or result.returncode == 2, denied, (agent, command, result.stdout, result.stderr))
 
     def test_partial_and_unknown_logs_cannot_report_success(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,17 +57,6 @@ class AgentContracts(unittest.TestCase):
                 rows = self.invoke("codex_agent.py", "normalize", log, str(code), "1").stdout.splitlines()
                 self.assertFalse(json.loads(rows[-1])["result"])
                 self.assertTrue(json.loads(rows[-1])["is_error"])
-
-    def test_hook_audit_detects_attempt_even_when_cli_omits_command(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / "tools"
-            env = dict(LOOP_AGENT="codex", LOOP_MODE="bootstrap", LOOP_TOOL_LOG=str(log), LOOP_CANARY_DIR=tmp)
-            for command, denied in [("git status", False), ("gh pr list --label loop:canary", True)]:
-                self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": command}}, **env)
-                with log.open("a") as out:
-                    print(json.dumps({"type": "result"}), file=out)
-                result = self.invoke("canaries.py", "audit", log, **env)
-                self.assertEqual(result.returncode != 0, denied, result.stdout)
 
     def test_time_limit_terminates_agent(self):
         with tempfile.TemporaryDirectory() as tmp:

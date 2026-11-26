@@ -19,7 +19,7 @@ The bootstrap is split into stages, each run as a separate session on this same 
 
 ${STAGE_TASK}
 
-After you finish, a separate agent tests your CI with canaries: pull requests that deliberately break the rules in AGENTS.md. Their specification and diffs are hidden from you on purpose. Do not search for them, read them, or look at their pull requests or branches; the orchestrator audits your tool calls, and any attempt voids the round. Build CI that enforces every rule in AGENTS.md as written, not a particular test of it.
+After you finish, a separate agent tests your CI with canaries: pull requests that deliberately break the rules in AGENTS.md. Their specification and diffs are hidden from you on purpose. Do not search for them, read them, or look at their pull requests or branches; the hook blocks such access. Build CI that enforces every rule in AGENTS.md as written, not a particular test of it.
 
 ## Reference: full bootstrap scope (do only your stage's part)
 

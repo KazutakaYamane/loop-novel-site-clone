@@ -1,4 +1,4 @@
-"""カナリア(わざと規則を破った PR)の仕様の検査、判定、盗み見の監査。判定はエージェントではなくここで行う。
+"""カナリア(わざと規則を破った PR)の仕様の検査と判定。判定はエージェントではなくここで行う。
 
 カナリアの仕様は、CI を作る土台作り役とは別のエージェントが、CI ができる前に書く。
 仕様と結果はリポジトリの外(LOOP_CANARY_DIR)に置き、土台作り役には差分を見せない。
@@ -7,7 +7,6 @@
   canaries.py rules                          AGENTS.md から、カナリアで試すべき規則の一覧を ID 付きで出す
   canaries.py validate <spec>                仕様の書式と、全規則が試されているか(免除を除く)を調べる
   canaries.py check <branch> <spec> <dir>    カナリア PR を判定する。<dir> に差分、結果、土台作り役向けの報告を残す
-  canaries.py audit <log>                    土台作り役の実行記録に、カナリアを覗いた跡がないか調べる
   canaries.py close                          カナリア PR を閉じ、ブランチを消す
   canaries.py waive <rule> <reason>          判定役が「CI では試せない」と認めた規則を免除する
   canaries.py case <spec> <id>               仕様から1ケースを抜き出す
@@ -191,59 +190,6 @@ def check(branch: str, spec: Path, out: Path) -> int:
     return 0 if ok else 1
 
 
-def audit(log: Path) -> int:
-    canary_prs = set()
-    for f in CANARY_DIR.glob("round-*/prs.json"):
-        canary_prs |= set(json.loads(f.read_text(encoding="utf-8")))
-    hits = []
-    saw_result = False
-    saw_hook = False
-    # Codex の記録は変換を通るので、読めない行は操作の取りこぼしを意味する。
-    # Claude の stream-json は異常終了で途中の行が切れうるが、操作は残った行から読めるので読み飛ばす
-    strict = os.environ.get("LOOP_AGENT") == "codex"
-    for line in log.read_text(encoding="utf-8").splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            if not strict:
-                continue
-            print("audit: invalid JSONL")
-            return 1
-        if not isinstance(e, dict) or e.get("type") == "audit_error":
-            if not strict:
-                continue
-            print("audit: unreadable operation record")
-            return 1
-        if e.get("source") == "codex_hook":
-            saw_hook = True
-        if e.get("type") == "result":
-            saw_result = True
-        if e.get("type") != "assistant":
-            continue
-        for block in e.get("message", {}).get("content", []):
-            if block.get("type") != "tool_use" or block.get("name") in ("Write", "Edit", "MultiEdit", "apply_patch"):
-                continue
-            text = json.dumps(block.get("input", {}), ensure_ascii=False)
-            if re.search(r"canar", text, flags=re.I) or str(CANARY_DIR) in text:
-                hits.append(f"{block.get('name')}: {text[:200]}")
-                continue
-            for num in re.findall(r"\b(?:pr\s+(?:diff|view|checkout|checks)|pulls/)\s*(\d+)", text):
-                if int(num) in canary_prs:
-                    hits.append(f"{block.get('name')} looked at canary PR #{num}: {text[:200]}")
-    if strict and not saw_hook:
-        print("audit: no Codex tool hook records for bootstrap")
-        return 1
-    if strict and not saw_result:
-        print("audit: missing result event")
-        return 1
-    if hits:
-        print("audit: the bootstrap iteration looked for canaries")
-        print("\n".join(f"- {h}" for h in hits))
-        return 1
-    print("audit: OK")
-    return 0
-
-
 def close() -> int:
     for pr in json.loads(gh("pr", "list", "--label", "loop:canary", "--state", "open", "--json", "number")):
         gh("pr", "close", str(pr["number"]), "--delete-branch", check=False)
@@ -301,8 +247,6 @@ def main(argv: list[str]) -> int:
         return validate(Path(args[0]))
     if cmd == "check" and len(args) == 3:
         return check(args[0], Path(args[1]), Path(args[2]))
-    if cmd == "audit" and len(args) == 1:
-        return audit(Path(args[0]))
     if cmd == "close" and not args:
         return close()
     if cmd == "waive" and len(args) == 2:

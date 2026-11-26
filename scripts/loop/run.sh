@@ -110,12 +110,11 @@ run_agent() {
     local output="$partlog.jsonl"
     if [ "$LOOP_AGENT" = codex ]; then output="$partlog.raw.jsonl"; fi
     (cd "$dir" && LOOP_MODE="$mode" LOOP_REPO_ROOT="$REPO_ROOT" LOOP_WT_DIR="$WT_DIR" \
-      LOOP_TOOL_LOG="$partlog.tools.jsonl" LOOP_DEFAULT_REF="origin/$DEFAULT_BRANCH" "${args[@]}" </dev/null >"$output" 2>"$partlog.stderr") || rc=$?
+      LOOP_DEFAULT_REF="origin/$DEFAULT_BRANCH" "${args[@]}" </dev/null >"$output" 2>"$partlog.stderr") || rc=$?
     if [ "$LOOP_AGENT" = codex ]; then
       local elapsed=$((SECONDS - started))
       active=$((active + elapsed))
       py "$LOOP_DIR/codex_agent.py" normalize "$output" "$rc" "$elapsed" >"$partlog.jsonl"
-      if [ -f "$partlog.tools.jsonl" ]; then cat "$partlog.tools.jsonl" >>"$partlog.jsonl"; fi
     fi
     if (( rc )); then log "$LOOP_AGENT exited $rc: $name (part $part)"; fi
     cat "$base.part$part.jsonl" >>"$LAST_LOG"
@@ -304,19 +303,13 @@ boot_ci_feedback() {
 # green の段階はエージェントが push して終わり、まとめ役が CI を待つ。落ちたら指摘を付けて新しいセッションで直させる
 # 成功で 0。green のときは BOOT_PR に PR の URL を入れる
 bootstrap_stage() {
-  local n=$1 stage=$2 file=$3 want=$4 voids=0 report r ci_note="" attempt=0 last_head="" ci
+  local n=$1 stage=$2 file=$3 want=$4 r ci_note="" attempt=0 last_head="" ci
   export STAGE="$stage"
   while :; do
     export FEEDBACK="${STAGE_FEEDBACK:-}$ci_note"
     STAGE_TASK="$(render_prompt "$LOOP_DIR/prompts/bootstrap/$file.md")"; export STAGE_TASK
     EFFORT="$BOOTSTRAP_EFFORT" run_agent bootstrap.md "$WORKTREE" "bootstrap-$stage-r$ROUND" "$MAX_COST_USD_BOOTSTRAP_STAGE" bootstrap
     record_metrics "$n" "$LAST_LOG" "bootstrap-$stage-r$ROUND"
-    if ! report="$(py "$LOOP_DIR/canaries.py" audit "$LAST_LOG")"; then
-      voids=$((voids + 1))
-      [ "$voids" -lt 2 ] || { escalate_issue "$n" "bootstrap stage $stage kept looking for canaries"; return 1; }
-      STAGE_FEEDBACK="$(printf 'The previous session was voided because it looked for the hidden canaries:\n%s\nBuild CI from AGENTS.md only.\n\n%s' "$report" "${STAGE_FEEDBACK:-}")"
-      continue
-    fi
     r="$(result_of "$LAST_LOG")"
     case "$want:$r" in
       "done:RESULT: done"*) return 0 ;;

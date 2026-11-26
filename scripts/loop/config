@@ -19,7 +19,7 @@ MAX_COST_USD_BOOTSTRAP_STAGE=30
 # bootstrap の段階。順に別のセッションで行い、同じブランチと PR に積む
 BOOTSTRAP_STAGES="tooling ci-checks ci-guard finish"
 # カナリアを試す回数(段階を積み終えたあとの1回目を含む)
-MAX_BOOTSTRAP_ROUNDS=4
+MAX_BOOTSTRAP_ROUNDS=6
 # カナリアの仕様が検査を通るまで書き直させる回数
 MAX_CANARY_SPEC_ROUNDS=3
 # 同じカナリアが何回続けて食い違ったら判定役を呼ぶか

@@ -42,7 +42,7 @@ These rules apply to the bootstrap iteration only:
 - It may create and change files under protected paths (for example the skeleton's `backend/phpunit.xml`, `frontend/tsconfig.json`, and `frontend/eslint.config.mjs`), except `.codex/`, `scripts/loop/`, `.github/ISSUE_TEMPLATE/`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/kakuyomu-reference.md`, and `.gitignore`.
 - It may add only the dependencies `scripts/loop/dependencies.md` allows.
 - It implements no acceptance criteria. The tests it adds exercise the skeleton and the checks themselves.
-- Its own PR's CI is not enough to finish. Its CI is tested with canaries: PRs that each deliberately break one rule in this file. The bootstrap iteration never sees the canaries. Do not search for them, read them, or look at their PRs or branches; the orchestrator audits the tool calls, and any attempt voids the round. Build CI that enforces every rule as written. When the orchestrator reports a canary that CI did not catch, fix the check so that it enforces the cited rule in general.
+- Its own PR's CI is not enough to finish. Its CI is tested with canaries: PRs that each deliberately break one rule in this file. The bootstrap iteration never sees the canaries. Do not search for them, read them, or look at their PRs or branches; the hook (`scripts/loop/guard-hook.py`) blocks such access. Build CI that enforces every rule as written. When the orchestrator reports a canary that CI did not catch, fix the check so that it enforces the cited rule in general.
 
 The harness self-test works without a human, and keeps CI and its test independent:
 

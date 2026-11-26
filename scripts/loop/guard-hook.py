@@ -182,10 +182,6 @@ def main() -> None:
     tool = data.get("tool_input", {}) or {}
     cwd = data.get("cwd") or os.getcwd()
     if os.environ.get("LOOP_AGENT") == "codex":
-        if MODE == "bootstrap" and os.environ.get("LOOP_TOOL_LOG"):
-            with open(os.environ["LOOP_TOOL_LOG"], "a", encoding="utf-8") as log:
-                block = {"type": "tool_use", "name": name, "input": tool}
-                print(json.dumps({"type": "assistant", "source": "codex_hook", "message": {"content": [block]}}), file=log)
         if name == "apply_patch":
             check_patch(tool["command"], cwd)
             return
