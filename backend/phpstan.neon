@@ -1,6 +1,7 @@
 # 静的解析の設定(AGENTS.md の Protected paths)。baseline は使わない
 includes:
     - vendor/larastan/larastan/extension.neon
+    - phpstan-baseline.neon
 
 parameters:
     level: max
