@@ -1,6 +1,6 @@
 # 必須チェック(scripts/loop/config の REQUIRED_CHECKS)。ジョブ名は REQUIRED_CHECKS と同じにする。
 # ac-coverage は PR の本文の編集でも走らせるため ac-coverage.yml に分けている。
-# guard は PR がワークフローを書き換えても止められるよう、base ブランチの定義で動く guard.yml に分けている。
+# guard は ac-coverage.yml と guard.yml にも同じものを置いている(docs/adr/0009)。
 # 各ジョブが何を防ぐかは docs/harness/README.md の「CI のジョブ」にある。
 name: CI
 
@@ -242,3 +242,27 @@ jobs:
             backend/storage/infection/
             frontend/reports/mutation/
           if-no-files-found: ignore
+
+  # guard は ci.yml、ac-coverage.yml、guard.yml の 3 か所に同じ手順で置く(docs/adr/0009)。
+  # PR が 1 つを「何もせずに成功する」ように書き換えても、残りがその書き換えを保護パスの変更として落とす。
+  # 1 つのファイルの書き換えで全部が止まらないよう、共有のスクリプトや action を使わず手順をここに書く。
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # 判定のスクリプトは base ブランチのものを使う(base にまだ無い bootstrap の PR だけ PR のもの)
+      - name: Forbidden shortcuts, protected paths and dependencies
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          dest="$RUNNER_TEMP/guard"
+          rm -rf "$dest" && mkdir -p "$dest"
+          if git cat-file -e "origin/$BASE_REF:.github/scripts/guard.py" 2>/dev/null; then
+            git archive "origin/$BASE_REF" .github/scripts | tar -x -C "$dest" --strip-components=2
+          else
+            cp -R .github/scripts/. "$dest/"
+          fi
+          python3 -m unittest discover -s "$dest/tests" -p "test_*.py"
+          python3 "$dest/guard.py" --base "origin/$BASE_REF"

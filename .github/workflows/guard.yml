@@ -1,11 +1,8 @@
-# 必須チェック guard(docs/adr/0008)。
-# pull_request_target なので、PR の版ではなく base ブランチにあるこのファイルとスクリプトで動く。
-# PR がこのワークフローや .github/scripts/ を書き換えても、guard はその変更を保護パスの変更として止める。
-# PR のコードは実行しない。PR の head は git のオブジェクトとして取り込み、差分と中身を読むだけにする。
+# 必須チェック guard(docs/adr/0004、0009)。同じ guard ジョブが ci.yml と ac-coverage.yml にもある。
 name: Guard
 
 on:
-  pull_request_target:
+  pull_request:
 
 concurrency:
   group: guard-${{ github.event.pull_request.number }}
@@ -14,25 +11,30 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+
 jobs:
+  # guard は ci.yml、ac-coverage.yml、guard.yml の 3 か所に同じ手順で置く(docs/adr/0009)。
+  # PR が 1 つを「何もせずに成功する」ように書き換えても、残りがその書き換えを保護パスの変更として落とす。
+  # 1 つのファイルの書き換えで全部が止まらないよう、共有のスクリプトや action を使わず手順をここに書く。
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      BASE_REF: ${{ github.event.pull_request.base.ref }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
     steps:
-      - name: Check out the base branch
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
-      - name: Fetch the base branch and the PR head as data
-        run: |
-          git fetch --no-tags origin "$BASE_REF" "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/${PR_NUMBER}/head"
-          git cat-file -e "${HEAD_SHA}^{commit}"
-      - name: Self-test of the CI scripts
-        run: python3 -m unittest discover -s .github/scripts/tests -p "test_*.py"
+      # 判定のスクリプトは base ブランチのものを使う(base にまだ無い bootstrap の PR だけ PR のもの)
       - name: Forbidden shortcuts, protected paths and dependencies
-        run: python3 .github/scripts/guard.py --base "origin/$BASE_REF" --head "$HEAD_SHA"
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          dest="$RUNNER_TEMP/guard"
+          rm -rf "$dest" && mkdir -p "$dest"
+          if git cat-file -e "origin/$BASE_REF:.github/scripts/guard.py" 2>/dev/null; then
+            git archive "origin/$BASE_REF" .github/scripts | tar -x -C "$dest" --strip-components=2
+          else
+            cp -R .github/scripts/. "$dest/"
+          fi
+          python3 -m unittest discover -s "$dest/tests" -p "test_*.py"
+          python3 "$dest/guard.py" --base "origin/$BASE_REF"
