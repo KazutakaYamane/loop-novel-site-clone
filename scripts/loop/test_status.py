@@ -116,6 +116,26 @@ esac
         self.assertIn(f"follow {self.state / 'second'}", creates[1])
         self.assertIn("terminal close --terminal term_new --tab", calls)
 
+    def test_agent_tab_retries_until_orca_knows_a_new_worktree(self):
+        # 作ったばかりの worktree は、Orca が認識するまで少しかかる
+        stub = self.state / "bin" / "orca"
+        stub.write_text(f"""#!/bin/sh
+printf '%s\\n' "$*" >>"{self.calls}"
+n=$(grep -c '^terminal create' "{self.calls}")
+[ "$n" -ge 3 ] || exit 1
+echo '{{"ok":true,"result":{{"terminal":{{"handle":"term_late"}}}}}}'
+""")
+        self.env["LOOP_ORCA_RETRY_SECONDS"] = "0"
+        self.st("agent-tab", self.state, self.state, "plan-r1", self.state / "base", "/repo")
+        self.assertEqual(json.loads((self.state / "orca/agent-tabs.json").read_text()), {"/repo": "term_late"})
+
+    def test_forget_tab_closes_the_tab_of_a_removed_worktree(self):
+        (self.state / "orca").mkdir()
+        (self.state / "orca/agent-tabs.json").write_text(json.dumps({"/wt/a": "term_a", "/wt/b": "term_b"}))
+        self.st("forget-tab", self.state, "/wt/a")
+        self.assertIn("terminal close --terminal term_a --tab", self.orca_calls())
+        self.assertEqual(json.loads((self.state / "orca/agent-tabs.json").read_text()), {"/wt/b": "term_b"})
+
     def test_ctl_refuses_to_start_a_second_loop(self):
         proc = self.fake_run_sh()
         self.st("start", self.state, proc.pid, "bootstrap", "", "/repo")

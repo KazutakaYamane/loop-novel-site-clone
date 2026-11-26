@@ -14,6 +14,7 @@ Orca への反映は見るためだけのもので、失敗してもループは
   loop_status.py watch <state_dir> [--once]                                ログと状態を流し続け、自分のタブ名を状態にする
   loop_status.py follow <log_base>                                         エージェント1回分の記録を読みやすく流す
   loop_status.py agent-tab <state_dir> <dir> <name> <log_base> <repo_root> その worktree にエージェントを見るタブを開く
+  loop_status.py forget-tab <state_dir> <worktree>                         消す worktree のエージェントのタブを閉じる
   loop_status.py open-watch <state_dir> <repo_root> <title>                ループを見るタブを開く(開いていれば何もしない)
 
 step: agent | waiting-ci | waiting-canaries | waiting-limit | escalated | done | stopped
@@ -359,10 +360,26 @@ def cmd_agent_tab(state, directory, name, base, repo_root):
     if tabs.get(wt):
         orca("terminal", "close", "--terminal", tabs[wt], "--tab")
     command = f"python3 -I {shlex.quote(str(HERE / 'loop_status.py'))} follow {shlex.quote(base)}"
-    handle = created_handle(orca("terminal", "create", "--worktree", f"path:{wt}", "--title", name,
-                                 "--command", command, "--json"))
+    # 作ったばかりの worktree は Orca が認識するまで少しかかり、その間はタブを作れない
+    wait = float(os.environ.get("LOOP_ORCA_RETRY_SECONDS", "3"))
+    for attempt in range(5):
+        handle = created_handle(orca("terminal", "create", "--worktree", f"path:{wt}", "--title", name,
+                                     "--command", command, "--json"))
+        if handle or not orca_bin():
+            break
+        time.sleep(wait)
     if handle:
         tabs[wt] = handle
+        save(store, tabs)
+    return 0
+
+
+def cmd_forget_tab(state, worktree):
+    store = Path(state) / "orca" / "agent-tabs.json"
+    tabs = load(store)
+    handle = tabs.pop(str(Path(worktree)), None)
+    if handle:
+        orca("terminal", "close", "--terminal", handle, "--tab")
         save(store, tabs)
     return 0
 
@@ -385,7 +402,7 @@ def cmd_open_watch(state, repo_root, tab_title):
 
 COMMANDS = {"start": cmd_start, "set": cmd_set, "finish": cmd_finish, "status": cmd_status,
             "running": cmd_running, "stop": cmd_stop, "watch": cmd_watch, "follow": cmd_follow,
-            "agent-tab": cmd_agent_tab, "open-watch": cmd_open_watch}
+            "agent-tab": cmd_agent_tab, "forget-tab": cmd_forget_tab, "open-watch": cmd_open_watch}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or sys.argv[1] not in COMMANDS:

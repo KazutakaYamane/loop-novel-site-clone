@@ -277,6 +277,13 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 
 ログと作業場所(worktree)はリポジトリの外、`../loop-novel-site-clone.loop/` に置く。
 
+まとめ役は、使い終わった作業場所を跡が残らないように片付ける。
+
+- issue の PR をマージしたら、その worktree のコンテナとボリューム(`scripts/worktree-teardown.sh`)、Orca のタブ、作業ディレクトリ、git の登録を消す。開発用のコンテナが root で作ったファイル(`vendor` やミューテーションのレポートなど)はそのままでは消せないので、コンテナの中で持ち主を戻してから消す。人間の判断待ちになった issue の worktree は、調べられるように残す。
+- エージェントの一時ファイル(Claude Code の scratchpad、`check-output.sh` のログ、試しに作った worktree)は、実行ごとに `../loop-novel-site-clone.loop/tmp/` の下の専用ディレクトリ(`TMPDIR`)に集め、実行が終わったら消す。
+- カナリアの worktree(`canary-apply`、`canary-spec`)は bootstrap のマージ後に、計画の worktree(`plan`)は全 issue が閉じたときに消す。
+- エージェントの実行記録(`logs/`)、カナリアの仕様と結果(`canaries/`)、metrics は、比較と計測に使うので消さない。
+
 ## 動かし方
 
 ```bash

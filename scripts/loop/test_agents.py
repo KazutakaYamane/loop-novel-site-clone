@@ -126,7 +126,8 @@ elif args[:2] == ["pr", "view"]:
 elif args[:1] == ["api"]:
     print("[]")
 """)
-        (tmp / "orca").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >>{tmp}/orca-calls\n")
+        (tmp / "orca").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >>{tmp}/orca-calls\n"
+                                  "case \"$1 $2\" in \"terminal create\") echo '{\"result\":{\"terminal\":{\"handle\":\"term_x\"}}}' ;; esac\n")
         for f in ("claude", "gh", "orca"):
             (tmp / f).chmod(0o755)
         env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
@@ -154,6 +155,8 @@ elif args[:1] == ["api"]:
             creates = [c for c in (tmp / "orca-calls").read_text().splitlines() if c.startswith("terminal create")]
             self.assertEqual(len(creates), 2)
             self.assertIn("--title bootstrap-finish-r1", creates[0])
+            # 2回目のセッションは、同じ worktree の前回のタブを閉じてから開く
+            self.assertIn("terminal close --terminal term_x --tab", (tmp / "orca-calls").read_text())
             for c in creates:
                 self.assertTrue(Path(c.split(" follow ")[1].split(" --json")[0] + ".done").exists(), c)
 
@@ -174,6 +177,63 @@ elif args[:1] == ["api"]:
             result, tmp = self.run_bootstrap_stage(tmp, commit_each_session=True, fail_sessions=set(), stale_head_reads=3)
             self.assertEqual(result.stdout.strip(), "rc=0 pr=https://example.com/pr/2", result.stderr)
             self.assertEqual((tmp / "sessions").read_text().strip(), "1")
+
+    def git_repo(self, path):
+        subprocess.run(["git", "init", "-q", path], check=True)
+        subprocess.run(["git", "-C", path, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        return Path(path)
+
+    def test_run_agent_removes_its_temporary_files_and_the_worktrees_it_left(self):
+        # エージェントの一時ディレクトリ(scratchpad を含む)と、その中に作った worktree を実行後に残さない
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = self.git_repo(tmp / "repo")
+            (tmp / "claude").write_text(f"""#!/bin/sh
+echo "$TMPDIR" >"{tmp}/agent-tmpdir"
+touch "$TMPDIR/scratch.txt"
+git worktree add -q --detach "$TMPDIR/sim" >/dev/null 2>&1
+echo '{{"type":"result","result":"RESULT: done","total_cost_usd":0.1}}'
+""")
+            (tmp / "claude").chmod(0o755)
+            env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"]}
+            env.pop("LOOP_AGENT", None)
+            result = subprocess.run(["bash", "-c", 'source "$1"; run_agent plan.md "$2" planner 30 normal; result_of "$LAST_LOG"',
+                                     "test", HERE / "run.sh", repo], capture_output=True, text=True, env=env, timeout=60)
+            self.assertEqual(result.stdout.strip(), "RESULT: done", result.stderr)
+            agent_tmp = Path((tmp / "agent-tmpdir").read_text().strip())
+            self.assertTrue(str(agent_tmp).startswith(str(tmp / "state")), agent_tmp)
+            self.assertFalse(agent_tmp.exists())
+            worktrees = subprocess.run(["git", "-C", repo, "worktree", "list"], capture_output=True, text=True).stdout
+            self.assertEqual(len(worktrees.splitlines()), 1, worktrees)
+
+    def test_remove_worktree_also_deletes_files_it_cannot_remove_directly(self):
+        # 開発用コンテナが root で作ったファイルは、コンテナの中で持ち主を戻してから消す
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = self.git_repo(tmp / "repo")
+            wt = tmp / "wt"
+            subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "--detach", wt], check=True)
+            locked = wt / "vendor"
+            locked.mkdir()
+            (locked / "pkg").write_text("x")
+            locked.chmod(0o555)
+            self.addCleanup(lambda: locked.exists() and locked.chmod(0o755))
+            (tmp / "docker").write_text(f"""#!/bin/sh
+printf '%s\\n' "$*" >>"{tmp}/docker-calls"
+case "$1" in
+  run) for a in "$@"; do case "$a" in *:/w) chmod -R u+rwX "${{a%:/w}}" ;; esac; done ;;
+esac
+""")
+            (tmp / "docker").chmod(0o755)
+            env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"]}
+            env.pop("LOOP_AGENT", None)
+            result = subprocess.run(["bash", "-c", 'source "$1"; remove_worktree "$2" "$3"', "test", HERE / "run.sh", wt, repo],
+                                    capture_output=True, text=True, env=env, timeout=60)
+            self.assertFalse(wt.exists(), result.stderr)
+            self.assertIn("run --rm -v", (tmp / "docker-calls").read_text())
+            worktrees = subprocess.run(["git", "-C", repo, "worktree", "list"], capture_output=True, text=True).stdout
+            self.assertEqual(len(worktrees.splitlines()), 1, worktrees)
 
 if __name__ == "__main__":
     unittest.main()

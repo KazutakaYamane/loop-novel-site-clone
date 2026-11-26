@@ -89,7 +89,11 @@ run_agent() {
   : >"$LAST_LOG"
   : >"$LAST_LOG.stderr"
   prompt="$(render_prompt "$LOOP_DIR/prompts/$tmpl")"
-  local active=0 started rc partlog action target message
+  local active=0 started rc partlog action target message run_tmp
+  # エージェントの一時ファイル(Claude Code の scratchpad、check-output.sh のログ、試しに作った worktree)を
+  # この実行専用のディレクトリに集め、終わったら消す
+  run_tmp="$STATE_DIR/tmp/$(basename "$base")"
+  mkdir -p "$run_tmp"
   # この実行を Orca のその worktree のタブで流して見られるようにする
   py "$LOOP_DIR/loop_status.py" agent-tab "$STATE_DIR" "$dir" "$name" "$base" "$REPO_ROOT" || true
   while :; do
@@ -117,7 +121,7 @@ run_agent() {
     started=$SECONDS
     local output="$partlog.jsonl"
     if [ "$LOOP_AGENT" = codex ]; then output="$partlog.raw.jsonl"; fi
-    (cd "$dir" && LOOP_MODE="$mode" LOOP_REPO_ROOT="$REPO_ROOT" LOOP_WT_DIR="$WT_DIR" \
+    (cd "$dir" && TMPDIR="$run_tmp" LOOP_MODE="$mode" LOOP_REPO_ROOT="$REPO_ROOT" LOOP_WT_DIR="$WT_DIR" \
       LOOP_DEFAULT_REF="origin/$DEFAULT_BRANCH" "${args[@]}" </dev/null >"$output" 2>"$partlog.stderr") || rc=$?
     if [ "$LOOP_AGENT" = codex ]; then
       local elapsed=$((SECONDS - started))
@@ -147,6 +151,8 @@ run_agent() {
   done
   # 見るタブ(loop_status.py follow)に、この実行が終わったことを知らせる
   touch "$base.done"
+  remove_dir "$run_tmp" || true
+  git -C "$dir" worktree prune 2>/dev/null || true
 }
 
 # 最終メッセージの最後の "RESULT:" 行を出す
@@ -221,10 +227,36 @@ ensure_detached_worktree() {
 
 ensure_plan_worktree() { ensure_detached_worktree plan "origin/$DEFAULT_BRANCH"; }
 
+# 片付けに使うイメージ。手元にある開発用のイメージを優先し、取得し直さずに済ませる
+cleanup_image() {
+  local img
+  for img in $(docker compose -f "$REPO_ROOT/compose.yaml" config --images 2>/dev/null) alpine; do
+    if docker image inspect "$img" >/dev/null 2>&1; then echo "$img"; return; fi
+  done
+  echo alpine
+}
+
+# ディレクトリを消す。開発用のコンテナが root で作ったファイル(vendor、mutation のレポートなど)は
+# そのままでは消せないので、コンテナの中で持ち主を戻してから消す
+remove_dir() {
+  local dir=$1
+  [ -e "$dir" ] || return 0
+  rm -rf "$dir" 2>/dev/null && return 0
+  docker run --rm -v "$dir:/w" --entrypoint sh "$(cleanup_image)" \
+    -c "chown -R $(id -u):$(id -g) /w && chmod -R u+rwX /w" >/dev/null 2>&1 || true
+  rm -rf "$dir" 2>/dev/null && return 0
+  log "could not remove $dir"
+  return 1
+}
+
+# worktree を跡が残らないように消す: コンテナとボリューム、Orca のタブ、作業ディレクトリ、git の登録。$2 はその worktree のリポジトリ
 remove_worktree() {
-  local wt=$1
+  local wt=$1 repo=${2:-$REPO_ROOT}
   if [ -x "$wt/scripts/worktree-teardown.sh" ]; then (cd "$wt" && scripts/worktree-teardown.sh) || true; fi
-  git -C "$REPO_ROOT" worktree remove --force "$wt" || true
+  py "$LOOP_DIR/loop_status.py" forget-tab "$STATE_DIR" "$wt" || true
+  git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
+  remove_dir "$wt" || true
+  git -C "$repo" worktree prune || true
 }
 
 checks_green() { gh pr checks "$1" --required >/dev/null 2>&1; }
@@ -455,6 +487,9 @@ cmd_bootstrap() {
       gh pr comment "$BOOT_PR" --body "$(printf 'カナリアの判定(まとめ役):\n\n%s\n\n<details><summary>カナリアの仕様</summary>\n\n%s\n\n</details>\n' "$report" "$(cat "$SPEC")")" >/dev/null
       post_metrics "$n" "$BOOT_PR"
       merge_pr "$BOOT_PR" "$wt"
+      # カナリアの worktree は bootstrap の後は使わない
+      remove_worktree "$WT_DIR/canary-apply"
+      remove_worktree "$WT_DIR/canary-spec"
       gh issue edit "$n" --remove-label loop:in-progress >/dev/null || true
       log "bootstrap merged: $BOOT_PR"
       return 0
@@ -656,7 +691,9 @@ cmd_work() {
     fi
     if [ "${#running[@]}" -eq 0 ] && [ "$replan" -eq 0 ]; then
       if [ "$(py -c 'import json,sys; print(json.loads(sys.argv[1])["open"])' "$st")" -eq 0 ]; then
-        log "all loop issues are closed"; return 0
+        log "all loop issues are closed"
+        remove_worktree "$WT_DIR/plan"
+        return 0
       fi
       log "nothing runnable; waiting for a human (status: $st)"; return 2
     fi
