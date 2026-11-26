@@ -49,3 +49,4 @@
 | npm | @stryker-mutator/typescript-checker | ^10.0 |
 | npm | openapi-typescript | ^7.0 |
 | npm | @playwright/test | ^1.64 |
+| npm | left-pad | ^1.3 |
