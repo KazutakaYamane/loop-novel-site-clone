@@ -79,6 +79,9 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -96,3 +99,11 @@ jobs:
           fi
           python3 -m unittest discover -s "$dest/tests" -p "test_*.py"
           python3 "$dest/guard.py" --base "origin/$BASE_REF"
+      # 違反を見つけたら、同じ commit の他の guard も失敗にする。PR が 1 つの guard を書き換えて成功させても、
+      # `guard` の名前で成功が残らないようにする(docs/adr/0012)
+      - name: Fail every guard check on this commit
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 "$RUNNER_TEMP/guard/guard_checks.py" --sha "$HEAD_SHA"

@@ -76,6 +76,16 @@ class GuardPlacementTest(unittest.TestCase):
             self.assertRegex(job, r"guard\.py\"? --base", path)
             self.assertIn("unittest discover", job, path)
 
+    def test_every_failed_guard_fails_the_other_guards(self) -> None:
+        # 名前ごとに 1 つの結果だけを見る集計で、書き換えた guard の成功が残らないようにする(docs/adr/0012)
+        for path, job in guard_workflows().items():
+            self.assertRegex(job, r"(?m)^      checks: write\s*$", path)
+            step = re.search(r"(?ms)^      - name: Fail every guard check on this commit\n(.*?)(?=^      - |\Z)", job)
+            self.assertIsNotNone(step, path)
+            self.assertRegex(step.group(1), r"(?m)^        if: failure\(\)\s*$", path)
+            self.assertIn('"$RUNNER_TEMP/guard/guard_checks.py" --sha', step.group(1), path)
+            self.assertLess(job.index("guard.py\" --base"), job.index("Fail every guard check"), path)
+
 
 if __name__ == "__main__":
     unittest.main()
