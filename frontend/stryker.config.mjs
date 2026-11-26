@@ -4,7 +4,9 @@
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 const config = {
   testRunner: "vitest",
-  vitest: { configFile: "vitest.config.mts" },
+  // related モードだと、テストから import されていないファイルの変更でテストが 0 件になり、
+  // Stryker が設定エラーで止まる。全テストを流し、テストのないコードの変異は NoCoverage として数える
+  vitest: { configFile: "vitest.config.mts", related: false },
   checkers: ["typescript"],
   tsconfigFile: "tsconfig.json",
   typescriptChecker: { prioritizePerformanceOverAccuracy: true },
