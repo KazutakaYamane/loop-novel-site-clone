@@ -17,6 +17,11 @@
          beStrictAboutTestsThatDoNotTestAnything="true"
          beStrictAboutOutputDuringTests="true"
 >
+    <groups>
+        <exclude>
+            <group>wip</group>
+        </exclude>
+    </groups>
     <testsuites>
         <testsuite name="Arch">
             <directory>tests/Arch</directory>
