@@ -10,7 +10,7 @@ GitHub Actions の `pull_request` のワークフローは、PR の版のワー�
 ## 決定
 
 - guard ジョブを `.github/workflows/guard.yml` に移し、`pull_request_target` で動かす。`pull_request_target` は PR の base ブランチにあるワークフローのファイルで動くので、PR がこのファイルや `.github/scripts/` を書き換えても、guard は書き換える前の定義と判定で動き、その書き換えを保護パスの変更として止める。
-- `pull_request_target` のジョブは書き込みの権限とシークレットを持ちうるので、PR のコードを実行しない。base ブランチをチェックアウトし、PR の head(`refs/pull/<番号>/head`)は git のオブジェクトとして取り込むだけにする。guard は `git diff` と `git show` で差分と中身を読む。権限は `contents: read` に絞り、チェックアウトの認証情報を残さない。
+- `pull_request_target` のジョブは書き込みの権限とシークレットを持ちうるので、PR のコードを実行しない。base ブランチをチェックアウトし、PR の head(`refs/pull/<番号>/head`)は git のオブジェクトとして取り込むだけにする。guard は `git diff` と `git show` で差分と中身を読む。権限は `contents: read` に絞る(PR の head を取り込む `git fetch` のために、読み取りだけのトークンはチェックアウトに残す)。
 - bootstrap の PR(head が `1-bootstrap`、base が `main`)だけは、`main` にまだ `guard.yml` が無いので `pull_request_target` が動かない。この PR のために `.github/workflows/guard-bootstrap.yml` が `pull_request` で同じ判定を動かす。bootstrap の後の PR では、このジョブは名前を `guard-bootstrap-only` に変えて飛ばし、`guard` という名前のチェックが 2 つ並ばないようにする。
 - `guard.yml` では、判定のスクリプトはチェックアウトした base ブランチのもの(`.github/scripts/`)をそのまま使う。0004 の `.github/ci-scripts.sh` は、`pull_request` で動く他のジョブ(`ac-coverage`、`mutation`、`visual`)と `guard-bootstrap.yml` で引き続き使う。
 
