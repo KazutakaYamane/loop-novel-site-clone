@@ -397,7 +397,7 @@ def check_special_cases(files: dict[str, FileDiff], head: str) -> list[str]:
 
 # 追加も変更も削除も認めない(検査の設定、ハーネス、規則、要件書、CI が書くもの)
 ANY_CHANGE = [
-    ".github/**", ".claude/**", "scripts/loop/**", "AGENTS.md", "CLAUDE.md",
+    ".github/**", ".claude/**", ".codex/**", "scripts/loop/**", "AGENTS.md", "CLAUDE.md",
     "docs/requirements.md", "docs/kakuyomu-reference.md", ".gitignore", "metrics/**",
     "backend/phpstan.neon", "backend/phpstan*.neon", "backend/phpstan.neon.dist", "**/*baseline*.neon",
     "**/eslint.config.*", "**/.eslintrc*", "eslint.config.*", ".eslintrc*",

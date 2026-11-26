@@ -389,6 +389,10 @@ class ProtectedPathTest(GuardTestCase):
                 self.repo.write(path, "changed\n")
                 self.assertViolation(f"{path}: [Protected paths]")
 
+    def test_codex_configuration(self) -> None:
+        self.repo.write(".codex/config.toml", "changed\n")
+        self.assertViolation(".codex/config.toml: [Protected paths]")
+
     def test_existing_adr(self) -> None:
         self.repo.write("docs/adr/0001-first.md", "# 1 changed\n")
         self.assertViolation("docs/adr/0001-first.md: [Protected paths]")
