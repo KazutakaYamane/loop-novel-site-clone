@@ -17,3 +17,5 @@
 | [0009](0009-guard-in-three-workflows.md) | guard を `pull_request` の 3 つのワークフローに置く | 採用 |
 | [0010](0010-composer-github-token-in-ci.md) | CI の composer install にジョブのトークンを渡す | 採用 |
 | [0011](0011-composer-cache-from-base-branch.md) | CI の composer のキャッシュを base ブランチで作り、PR が読む | 採用 |
+| [0012](0012-layout-styling-and-site-name.md) | 画面の組み方(CSS Modules)とクローンのサイト名 | 採用 |
+| [0013](0013-visual-baselines-per-element.md) | 見た目の基準画像は確定した要素だけを撮る | 採用 |

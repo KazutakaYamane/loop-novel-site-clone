@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="130" height="25" viewBox="0 0 130 25">
+  <rect x="0" y="0" width="25" height="25" rx="3" fill="#2a8fc4"/>
+  <path d="M7 6h11v13H7z" fill="none" stroke="#fff" stroke-width="2.5"/>
+  <path d="M7 12.5h11" stroke="#fff" stroke-width="2.5"/>
+  <text x="31" y="19" font-family="sans-serif" font-size="17" font-weight="700" fill="#222">ヨミカキ</text>
+</svg>

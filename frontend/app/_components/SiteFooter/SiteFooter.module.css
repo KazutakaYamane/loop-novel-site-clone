@@ -1,0 +1,58 @@
+/* 値は docs/kakuyomu-reference/layout.md(PC 1280px・スマートフォン 412px)から採った */
+
+.footer {
+  margin-top: auto;
+  padding: 28px 0 64px;
+  background: var(--color-footer-background);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.inner {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: 0 var(--layout-side-padding);
+}
+
+.bottom {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.notice,
+.copyright {
+  padding-top: 4px;
+  color: var(--color-text-weak);
+  font-size: 12.6px;
+  line-height: 18.9px;
+}
+
+.copyright {
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .footer {
+    padding: 0;
+  }
+
+  .inner {
+    padding: 0;
+  }
+
+  .bottom {
+    flex-direction: column;
+    gap: 0;
+    padding: 8px 16px 16px;
+  }
+
+  .notice,
+  .copyright {
+    font-size: 11.5px;
+    line-height: 17.25px;
+  }
+}

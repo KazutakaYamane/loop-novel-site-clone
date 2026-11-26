@@ -1,0 +1,98 @@
+/* 値は docs/kakuyomu-reference/layout.md(PC 1280px・スマートフォン 412px)から採った */
+
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  width: 100%;
+  background: var(--color-surface);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.line1 {
+  height: 50px;
+}
+
+.inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: var(--layout-max-width);
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 var(--layout-side-padding);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.logoImage {
+  display: block;
+  width: 130px;
+  height: 25px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.nav {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .line1 {
+    height: 34px;
+  }
+
+  .inner {
+    padding: 0 8px 0 10px;
+  }
+
+  .logoImage {
+    width: 83px;
+    height: 16px;
+  }
+
+  .nav {
+    display: block;
+    height: 45px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .navList {
+    display: flex;
+    list-style: none;
+  }
+
+  .navItem {
+    flex: 0 0 20%;
+  }
+
+  .navLink {
+    display: block;
+    height: 44px;
+    padding-top: 5px;
+    text-align: center;
+  }
+
+  .navIcon {
+    display: inline-block;
+    vertical-align: top;
+    color: var(--color-text);
+  }
+
+  .navTitle {
+    display: block;
+    color: var(--color-text-weak);
+    font-size: 10px;
+    line-height: 18px;
+  }
+}
