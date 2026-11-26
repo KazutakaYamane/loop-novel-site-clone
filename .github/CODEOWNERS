@@ -54,3 +54,5 @@
 /docs/adr/0004-ci-jobs-and-guard.md @KazutakaYamane
 /docs/adr/0005-acceptance-criteria-tags.md @KazutakaYamane
 /docs/adr/0006-merge-metrics.md @KazutakaYamane
+/docs/adr/0007-deterministic-visual-and-dev-server.md @KazutakaYamane
+/docs/adr/0008-guard-runs-from-the-base-branch.md @KazutakaYamane

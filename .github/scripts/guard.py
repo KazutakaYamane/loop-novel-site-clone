@@ -221,6 +221,151 @@ def check_patterns(files: dict[str, FileDiff]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# 1b. テストの入力や名前の特別扱い(hard-coded expected values)
+# ---------------------------------------------------------------------------
+# 「テストの入力 X なら、テストが期待する Y を返し、それ以外は一般の計算をする」形を探す。
+# 正しい一般の計算は変異テストでも見分けられないので、形で止める。
+# 誤検出を抑えるため、次をすべて満たすときだけ止める:
+#   - 本番コードの追加行の if か三項演算子が、値をリテラル X と == / === で比べている(0、1、-1、空文字は除く)
+#   - その分岐はリテラル Y を返すだけである
+#   - X と Y の両方が、PR が変えたテストファイルに現れる
+#   - その後に(三項演算子なら else 側に)リテラルではない式を返す一般の経路がある
+
+HARDCODED = "Forbidden shortcuts: special-casing production code for test inputs or test names"
+_NUM = r"-?\d[\d_]*(?:\.\d+)?"
+_STR = r"""'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`[^`$\\\n]*`"""
+_LIT = rf"(?:(?<![\w$.]){_NUM}(?![\w.])|{_STR})"
+LITERAL = re.compile(_LIT)
+FULL_LITERAL = re.compile(rf"\s*\(?\s*({_LIT})\s*\)?\s*;?\s*")
+EQ = r"(?<![!=<>])===?(?!=)"
+EQ_LITERAL = re.compile(rf"{EQ}\s*({_LIT})|({_LIT})\s*{EQ}")
+IF_START = re.compile(r"(?<![\w$])if\s*\(")
+IF_BODY = re.compile(rf"\s*(\{{)?\s*return\s+({_LIT})\s*;?\s*(\}})?")
+RETURN = re.compile(r"(?<![\w$])return\b([^;\n]*)")
+TERNARY_ELSE = re.compile(rf"\s*\)?\s*\?(?![.?>-])\s*({_LIT})\s*:\s*([^;\n]+)")
+TEST_TITLE = re.compile(rf"(?<![\w$>])(?:test|it|describe|context)\s*(?:\.\s*\w+\s*)*\(\s*({_STR})")
+TRIVIAL = {"n:0", "n:1", "n:-1", "s:"}
+
+
+def literal_key(token: str) -> str:
+    if token[0] in "'\"`":
+        return "s:" + token[1:-1]
+    try:
+        n = float(token.replace("_", ""))
+    except ValueError:
+        return "n:" + token
+    return "n:" + (str(int(n)) if n.is_integer() else repr(n))
+
+
+def is_literal_expr(expr: str) -> bool:
+    return FULL_LITERAL.fullmatch(expr) is not None
+
+
+def closing_paren(text: str, start: int) -> int:
+    """text[start] の '(' に対応する ')' の位置。文字列の中の括弧は数えない。"""
+    depth, quote, i = 0, None, start
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if c == "\\":
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "'\"`":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+def line_of(text: str, pos: int) -> int:
+    return text.count("\n", 0, pos) + 1
+
+
+def general_return_follows(text: str, pos: int) -> bool:
+    """pos より後の同じ関数の中に、リテラルではない式を返す return があるか(次の 3 つまで見る)。"""
+    for i, m in enumerate(RETURN.finditer(text, pos)):
+        if i >= 3:
+            break
+        expr = m.group(1).strip()
+        if expr and not is_literal_expr(expr):
+            return True
+    return False
+
+
+def special_cases(text: str, test_literals: set[str]) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+
+    def known(token: str) -> bool:
+        key = literal_key(token)
+        return key not in TRIVIAL and key in test_literals
+
+    for m in IF_START.finditer(text):
+        open_at = m.end() - 1
+        close_at = closing_paren(text, open_at)
+        if close_at < 0:
+            continue
+        cond = text[open_at + 1:close_at]
+        if "typeof" in cond:
+            continue
+        body = IF_BODY.match(text, close_at + 1)
+        if not body or (body.group(1) is not None) != (body.group(3) is not None):
+            continue
+        for eq in EQ_LITERAL.finditer(cond):
+            x = eq.group(1) or eq.group(2)
+            if known(x) and known(body.group(2)) and general_return_follows(text, body.end()):
+                found.append((line_of(text, m.start()), f"if ... {x} returns {body.group(2)}"))
+                break
+
+    for eq in EQ_LITERAL.finditer(text):
+        x = eq.group(1) or eq.group(2)
+        # 右辺がリテラルのときはその直後、左辺のときは比べる相手の式の後に ? が来る
+        after = eq.end() if eq.group(1) else re.compile(r"[\w$.\->()\[\]'\"]*").match(text, eq.end()).end()
+        t = TERNARY_ELSE.match(text, after)
+        if not t:
+            continue
+        else_expr = t.group(2).strip().rstrip(";)").strip()
+        if known(x) and known(t.group(1)) and else_expr and not is_literal_expr(else_expr):
+            found.append((line_of(text, eq.start()), f"{x} ? {t.group(1)} : ..."))
+    return found
+
+
+def check_special_cases(files: dict[str, FileDiff], head: str) -> list[str]:
+    test_literals: set[str] = set()
+    titles: set[str] = set()
+    for path, fd in files.items():
+        if fd.status == "D" or fd.binary or not is_test(path):
+            continue
+        text = show(head, path) or ""
+        test_literals |= {literal_key(t) for t in LITERAL.findall(text)}
+        for t in TEST_TITLE.findall(text):
+            title = t[1:-1].strip()
+            if len(title) >= 8:
+                titles.add(title)
+
+    errors = []
+    for path, fd in sorted(files.items()):
+        if fd.status == "D" or fd.binary or not (is_php_prod(path) or is_js_prod(path)):
+            continue
+        added = {n for n, _ in fd.added}
+        text = show(head, path) or ""
+        for line_no, what in special_cases(text, test_literals):
+            if line_no in added:
+                errors.append(f"{path}:{line_no}: [{HARDCODED}] hard-coded expected value: returns the value a test expects for a test input "
+                              f"({what}). Compute it with the general code instead")
+        for line_no, line in fd.added:
+            for t in LITERAL.findall(line):
+                if t[0] in "'\"`" and t[1:-1].strip() in titles:
+                    errors.append(f"{path}:{line_no}: [{HARDCODED}] production code refers to a test name: {t}")
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # 2. 保護されたパス
 # ---------------------------------------------------------------------------
 
@@ -362,6 +507,7 @@ def main(argv: list[str]) -> int:
     files = pr_diff(args.base, args.head)
     errors: list[str] = []
     errors += check_patterns(files)
+    errors += check_special_cases(files, args.head)
 
     if show(args.base, ".github/CODEOWNERS") is not None:
         errors += check_protected(files, args.base)

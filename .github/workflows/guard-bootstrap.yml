@@ -1,0 +1,31 @@
+# guard.yml の代わりに、bootstrap の PR(head が 1-bootstrap、base が main)だけで guard を動かす(docs/adr/0008)。
+# pull_request_target は base ブランチのワークフローを使うので、guard.yml がまだ無い main への bootstrap の PR では動かない。
+# bootstrap の後の PR では guard.yml が guard を出す。このジョブは名前を変えて飛ばし、guard が 2 つ並ばないようにする。
+name: Guard (bootstrap)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: ${{ github.event.pull_request.head.ref == '1-bootstrap' && 'guard' || 'guard-bootstrap-only' }}
+    if: github.event.pull_request.head.ref == '1-bootstrap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - name: Self-test of the CI scripts
+        run: python3 -m unittest discover -s "$RUNNER_TEMP/ci/tests" -p "test_*.py"
+      - name: Forbidden shortcuts, protected paths and dependencies
+        run: python3 "$RUNNER_TEMP/ci/guard.py" --base "origin/$BASE_REF"

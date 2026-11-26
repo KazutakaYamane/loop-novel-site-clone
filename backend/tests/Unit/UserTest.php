@@ -24,3 +24,11 @@ test('the password is hashed when it is assigned', function () {
     expect($user->password)->not->toBe('secret-password')
         ->and(password_verify('secret-password', $user->password))->toBeTrue();
 });
+
+test('the email verification time is read as a date', function () {
+    $user = new User;
+    $user->setRawAttributes(['email_verified_at' => '2026-11-26 04:00:00']);
+
+    expect($user->email_verified_at)->toBeInstanceOf(DateTimeInterface::class)
+        ->and($user->email_verified_at?->format('Y-m-d H:i'))->toBe('2026-11-26 04:00');
+});

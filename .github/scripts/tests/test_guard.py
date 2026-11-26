@@ -257,6 +257,85 @@ class ForbiddenPatternTest(GuardTestCase):
         self.assertClean()
 
 
+class HardCodedSpecialCaseTest(GuardTestCase):
+    """テストの入力にだけ、テストが期待する値を返す特別扱い(Forbidden shortcuts の hard-coded expected values)。"""
+
+    PHP_TEST = (
+        "<?php\n\nuse App\\Support\\ReadingTime;\n\n"
+        "test('読了時間', function () {\n"
+        "    expect(ReadingTime::minutes(str_repeat('あ', 1200)))->toBe(3);\n"
+        "    expect(ReadingTime::minutes(str_repeat('あ', 1000)))->toBe(2);\n"
+        "});\n"
+    )
+
+    def php(self, body: str) -> str:
+        return (
+            "<?php\n\ndeclare(strict_types=1);\n\nnamespace App\\Support;\n\nclass ReadingTime\n{\n"
+            "    public static function minutes(string $text): int\n    {\n" + body + "    }\n}\n"
+        )
+
+    def test_if_returning_the_expected_value_for_the_test_input(self) -> None:
+        self.repo.write("backend/app/Support/ReadingTime.php", self.php(
+            "        if (mb_strlen($text) === 1200) {\n            return 3;\n        }\n\n"
+            "        return intdiv(mb_strlen($text), 500);\n"))
+        self.repo.write("backend/tests/Unit/ReadingTimeTest.php", self.PHP_TEST)
+        self.assertViolation("hard-coded")
+
+    def test_if_on_one_line_and_literal_on_the_left(self) -> None:
+        self.repo.write("backend/app/Support/ReadingTime.php", self.php(
+            "        if (1200 == mb_strlen($text)) return 3;\n        return intdiv(mb_strlen($text), 500);\n"))
+        self.repo.write("backend/tests/Unit/ReadingTimeTest.php", self.PHP_TEST)
+        self.assertViolation("hard-coded")
+
+    def test_ternary_in_typescript(self) -> None:
+        self.repo.write("frontend/lib/reading-time.ts",
+                        "export function minutes(text: string): number {\n"
+                        "  return text.length === 1200\n    ? 3\n    : Math.floor(text.length / 500);\n}\n")
+        self.repo.write("frontend/lib/reading-time.test.ts",
+                        'test("minutes", () => {\n  expect(minutes("あ".repeat(1200))).toBe(3);\n});\n')
+        self.assertViolation("hard-coded")
+
+    def test_string_input_without_braces_in_typescript(self) -> None:
+        self.repo.write("frontend/lib/slug.ts",
+                        'export function slug(title: string): string {\n  if (title === "Hello World") return "hello_world";\n'
+                        '  return title.toLowerCase().replace(/ /g, "-");\n}\n')
+        self.repo.write("frontend/lib/slug.test.ts",
+                        'test("slug", () => {\n  expect(slug("Hello World")).toBe("hello_world");\n});\n')
+        self.assertViolation("hard-coded")
+
+    def test_test_title_in_production_code(self) -> None:
+        self.repo.write("backend/app/Support/Title.php",
+                        "<?php\n\nfunction title(string $name): bool\n{\n    return $name === '作品のタイトルを保存する';\n}\n")
+        self.repo.write("backend/tests/Unit/TitleTest.php",
+                        "<?php\n\ntest('作品のタイトルを保存する', function () {\n    expect(title('x'))->toBeFalse();\n});\n")
+        self.assertViolation("test name")
+
+    def test_base_case_with_a_trivial_literal_is_allowed(self) -> None:
+        self.repo.write("backend/app/Support/ReadingTime.php", self.php(
+            "        if ($text === '') {\n            return 0;\n        }\n\n"
+            "        return intdiv(mb_strlen($text) + 499, 500);\n"))
+        self.repo.write("backend/tests/Unit/ReadingTimeTest.php",
+                        "<?php\n\ntest('空', function () {\n    expect(ReadingTime::minutes(''))->toBe(0);\n"
+                        "    expect(ReadingTime::minutes(str_repeat('あ', 1200)))->toBe(3);\n});\n")
+        self.assertClean()
+
+    def test_label_mapping_is_allowed(self) -> None:
+        self.repo.write("frontend/lib/status-label.ts",
+                        'export function statusLabel(status: string): string {\n  if (status === "draft") {\n    return "下書き";\n  }\n'
+                        '  return "公開中";\n}\n')
+        self.repo.write("frontend/lib/status-label.test.ts",
+                        'test("labels", () => {\n  expect(statusLabel("draft")).toBe("下書き");\n'
+                        '  expect(statusLabel("public")).toBe("公開中");\n});\n')
+        self.assertClean()
+
+    def test_literal_that_no_test_uses_is_allowed(self) -> None:
+        self.repo.write("backend/app/Support/ReadingTime.php", self.php(
+            "        if (mb_strlen($text) === 100000) {\n            return 200;\n        }\n\n"
+            "        return intdiv(mb_strlen($text) + 499, 500);\n"))
+        self.repo.write("backend/tests/Unit/ReadingTimeTest.php", self.PHP_TEST)
+        self.assertClean()
+
+
 class ProtectedPathTest(GuardTestCase):
     def test_modifying_an_existing_test(self) -> None:
         self.repo.write("backend/tests/Feature/ExistingTest.php", "<?php\n\ntest('x', function () {\n    expect(1 + 1)->toBe(3);\n});\n")

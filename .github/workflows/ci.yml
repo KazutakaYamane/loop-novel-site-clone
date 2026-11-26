@@ -1,5 +1,6 @@
 # 必須チェック(scripts/loop/config の REQUIRED_CHECKS)。ジョブ名は REQUIRED_CHECKS と同じにする。
 # ac-coverage は PR の本文の編集でも走らせるため ac-coverage.yml に分けている。
+# guard は PR がワークフローを書き換えても止められるよう、base ブランチの定義で動く guard.yml に分けている。
 # 各ジョブが何を防ぐかは docs/harness/README.md の「CI のジョブ」にある。
 name: CI
 
@@ -137,6 +138,9 @@ jobs:
             e2e/test-results/
             e2e/playwright-report/
           if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail 200 web
 
   mutation:
     runs-on: ubuntu-latest
@@ -194,20 +198,25 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
         working-directory: frontend
+      # Stryker の TypeScript checker は最初に全体を型検査する。Next.js が生成する型(LayoutProps など)が無いと失敗する
+      - name: Generate Next.js types
+        working-directory: frontend
+        run: npx next typegen
       - name: Changed frontend lines
         id: targets
         run: |
           python3 "$RUNNER_TEMP/ci/changed_code.py" stryker-mutate --base "origin/$BASE_REF" > "$RUNNER_TEMP/mutate.txt"
           cat "$RUNNER_TEMP/mutate.txt"
           echo "mutate=$(paste -sd, "$RUNNER_TEMP/mutate.txt")" >> "$GITHUB_OUTPUT"
-      # 前回までの結果(incrementalFile)を使い回し、変わったコードとテストだけを試す
+      # 同じ PR の前回までの結果(incrementalFile)を使い回し、変わったコードとテストだけを試す。
+      # 他の PR の結果は使わない。Stryker は incrementalFile にある他のファイルの結果もスコアに数えるため、
+      # 混ぜるとこの PR のスコアが薄まる
       - uses: actions/cache@v4
         with:
           path: frontend/reports/stryker-incremental.json
           key: stryker-incremental-${{ github.event.pull_request.number }}-${{ github.run_id }}
           restore-keys: |
             stryker-incremental-${{ github.event.pull_request.number }}-
-            stryker-incremental-
       # しきい値は stryker.config.mjs の thresholds.break
       - name: Stryker (incremental) on the changed lines
         if: steps.targets.outputs.mutate != ''
@@ -227,18 +236,3 @@ jobs:
             backend/storage/infection/
             frontend/reports/mutation/
           if-no-files-found: ignore
-
-  guard:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - run: git fetch --no-tags origin "$BASE_REF"
-      - name: Use the CI scripts of the base branch
-        run: .github/ci-scripts.sh
-      - name: Self-test of the CI scripts
-        run: python3 -m unittest discover -s "$RUNNER_TEMP/ci/tests" -p "test_*.py"
-      - name: Forbidden shortcuts, protected paths and dependencies
-        run: python3 "$RUNNER_TEMP/ci/guard.py" --base "origin/$BASE_REF"

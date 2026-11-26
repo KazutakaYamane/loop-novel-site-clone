@@ -12,3 +12,5 @@
 | [0004](0004-ci-jobs-and-guard.md) | CI のジョブの構成と guard の判定方法 | 採用 |
 | [0005](0005-acceptance-criteria-tags.md) | 受け入れ条件の ID をテストに付ける方法 | 採用 |
 | [0006](0006-merge-metrics.md) | マージ時の metrics の記録 | 採用 |
+| [0007](0007-deterministic-visual-and-dev-server.md) | 見た目の比較を安定させるための開発サーバーとフォントの扱い | 採用 |
+| [0008](0008-guard-runs-from-the-base-branch.md) | guard を base ブランチのワークフローの定義で動かす | 採用 |
