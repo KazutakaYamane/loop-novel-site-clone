@@ -91,8 +91,15 @@ dc() { docker compose --project-name "$project" "$@"; }
 
 dc build app web
 dc up -d --wait db redis
-# COMPOSER_AUTH があれば(CI)コンテナに渡す。無ければ何も渡らない
-dc run --rm --no-deps -e COMPOSER_AUTH app composer install --no-interaction --prefer-dist
+# COMPOSER_AUTH があれば(CI)コンテナに渡す。無ければ何も渡らない。
+# COMPOSER_CACHE_DIR があれば(CI)そのディレクトリをコンテナの composer のキャッシュにする(docs/adr/0011)。
+# コンテナのユーザーが書けないディレクトリなら、composer はキャッシュを使わずに続ける
+composer_cache=()
+if [ -n "${COMPOSER_CACHE_DIR:-}" ]; then
+  mkdir -p "$COMPOSER_CACHE_DIR"
+  composer_cache=(-v "$COMPOSER_CACHE_DIR:/tmp/composer-cache" -e COMPOSER_CACHE_DIR=/tmp/composer-cache)
+fi
+dc run --rm --no-deps -e COMPOSER_AUTH "${composer_cache[@]}" app composer install --no-interaction --prefer-dist
 if ! grep -Eq '^APP_KEY=.+' backend/.env; then
   dc run --rm --no-deps app php artisan key:generate --no-interaction
 fi

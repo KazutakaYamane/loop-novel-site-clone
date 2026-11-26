@@ -1,0 +1,42 @@
+# composer のキャッシュを、push されたブランチの ref に作る(docs/adr/0011)。
+# GitHub Actions のキャッシュは ref ごとに分かれ、PR が読めるのは自分の ref と base ブランチのものだけ。
+# base ブランチにキャッシュがあれば、同時に走る多くの PR が api.github.com から全パッケージを取り直さずに済む。
+# 必須チェックではない。失敗しても PR のジョブはダウンロードに戻るだけ。
+name: Composer cache
+
+on:
+  push:
+
+concurrency:
+  group: composer-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+  COMPOSER_CACHE_DIR: /tmp/composer-cache
+
+jobs:
+  composer-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: /tmp/composer-cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+      - uses: shivammathur/setup-php@v2
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          php-version: "8.5"
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: none
+          tools: composer:v2
+      # キャッシュを満たすだけなので、スクリプトとオートローダーは要らない
+      - if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts --no-autoloader
