@@ -21,11 +21,13 @@ if [ "$project" = "novel-submission-site-clone" ] || [ "$project" = "loop-novel-
 fi
 
 # ポートの区画。issue 番号のブランチ(<番号>-<slug>)は番号で、それ以外は名前のハッシュで決める。
-# 区画ごとに 20 個のポートを割り当て、20000 番台から使う(novel-site-clone は 20000 未満の既定値を使う)
+# 区画ごとに 20 個のポートを割り当て、20000 から使う(novel-site-clone は 20000 未満の既定値を使う)。
+# Linux の一時ポート(32768 以上)は外向きの接続が使うので、待ち受けていなくても bind が失敗することがある。
+# そのため最大でも 32599 に収める
 if [[ "$branch" =~ ^([0-9]+)- ]]; then
-  slot=$(( 10#${BASH_REMATCH[1]} % 1000 ))
+  slot=$(( 10#${BASH_REMATCH[1]} % 500 ))
 else
-  slot=$(( 1000 + $(printf '%s' "$branch" | cksum | cut -d' ' -f1) % 500 ))
+  slot=$(( 500 + $(printf '%s' "$branch" | cksum | cut -d' ' -f1) % 130 ))
 fi
 base=$(( 20000 + slot * 20 ))
 
@@ -35,7 +37,7 @@ port_in_use() {
   if docker ps --format '{{.Names}} {{.Ports}}' | grep -v "^${project}-" | grep -Eq "[:.]${port}->"; then
     return 0
   fi
-  if command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"; then
+  if command -v ss >/dev/null 2>&1 && ss -tanH 2>/dev/null | awk '{print $4}' | grep -Eq "[:.]${port}$"; then
     docker ps --format '{{.Names}} {{.Ports}}' | grep "^${project}-" | grep -Eq "[:.]${port}->" && return 1
     return 0
   fi

@@ -23,7 +23,7 @@ scripts/worktree-setup.sh
 
 このスクリプトは次のことをする。何度実行してもよい(詳しくは [docs/adr/0001](docs/adr/0001-worktree-isolation.md))。
 
-1. `.env` を `.env.example` から作る。Compose のプロジェクト名(`loop-<ブランチ名>`)と、すべてのポート(20000 番台)をこの worktree 専用にする
+1. `.env` を `.env.example` から作る。Compose のプロジェクト名(`loop-<ブランチ名>`)と、すべてのポート(20000〜32599)をこの worktree 専用にする
 2. `backend/.env` を作り、`APP_KEY` を生成する
 3. イメージを作り、`composer install` と E2E の `npm ci` を行う
 4. MySQL と Redis を起動し、マイグレーションを流す
