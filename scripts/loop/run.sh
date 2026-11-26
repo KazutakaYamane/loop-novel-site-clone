@@ -227,9 +227,38 @@ PY
   fi
 }
 
+# bootstrap の1段階を1セッションで行う。$1 番号 $2 段階名 $3 プロンプトの段階ファイル $4 期待する結果(done|green)
+# 成功で 0。green のときは BOOT_PR に PR の URL を入れる
+bootstrap_stage() {
+  local n=$1 stage=$2 file=$3 want=$4 voids=0 report r
+  export STAGE="$stage"
+  while :; do
+    export FEEDBACK="${STAGE_FEEDBACK:-}"
+    STAGE_TASK="$(render_prompt "$LOOP_DIR/prompts/bootstrap/$file.md")"; export STAGE_TASK
+    run_claude bootstrap.md "$WORKTREE" "bootstrap-$stage-r$ROUND" "$MAX_COST_USD_BOOTSTRAP_STAGE" bootstrap
+    record_metrics "$n" "$LAST_LOG" "bootstrap-$stage-r$ROUND"
+    if ! report="$(py "$LOOP_DIR/canaries.py" audit "$LAST_LOG")"; then
+      voids=$((voids + 1))
+      [ "$voids" -lt 2 ] || { escalate_issue "$n" "bootstrap stage $stage kept looking for canaries"; return 1; }
+      STAGE_FEEDBACK="$(printf 'The previous session was voided because it looked for the hidden canaries:\n%s\nBuild CI from AGENTS.md only.\n\n%s' "$report" "${STAGE_FEEDBACK:-}")"
+      continue
+    fi
+    r="$(result_of "$LAST_LOG")"
+    case "$want:$r" in
+      "done:RESULT: done"*) return 0 ;;
+      "green:RESULT: green "*)
+        BOOT_PR="${r#RESULT: green }"
+        checks_green "$BOOT_PR" && return 0
+        STAGE_FEEDBACK="The previous session claimed green, but the required checks on $BOOT_PR are not green. Fix them."
+        continue ;;
+      *) escalate_issue "$n" "bootstrap stage $stage (round $ROUND) ended with: $r (log: $(basename "$LAST_LOG"))"; return 1 ;;
+    esac
+  done
+}
+
 cmd_bootstrap() {
   git -C "$REPO_ROOT" fetch -q origin
-  local n branch wt cwt r pr report rd voids=0 feedback=""
+  local n branch wt cwt r report rd stage area last start=1 done_file="$STATE_DIR/bootstrap-stages.done"
   n="$(gh issue list --label loop:bootstrap --state open --json number --jq '.[0].number // empty')"
   if [ -z "$n" ]; then log "no open loop:bootstrap issue; skipping bootstrap"; return 0; fi
   branch="$n-bootstrap"
@@ -241,31 +270,59 @@ cmd_bootstrap() {
   fi
 
   wt="$(ensure_worktree "$branch")"
-  for round in $(seq 1 "$MAX_BOOTSTRAP_ROUNDS"); do
-    export ISSUE=$n BRANCH=$branch WORKTREE=$wt ROUND=$round MAX_ROUNDS=$MAX_BOOTSTRAP_ROUNDS FEEDBACK="$feedback"
-    run_claude bootstrap.md "$wt" "bootstrap-r$round" "$MAX_COST_USD_BOOTSTRAP" bootstrap
-    record_metrics "$n" "$LAST_LOG" "bootstrap-r$round"
-    if ! report="$(py "$LOOP_DIR/canaries.py" audit "$LAST_LOG")"; then
-      voids=$((voids + 1))
-      [ "$voids" -lt 2 ] || { escalate_issue "$n" "the bootstrap iteration kept looking for canaries"; return 1; }
-      feedback="$(printf 'The previous round was voided because it looked for the hidden canaries:\n%s\nBuild CI from AGENTS.md only.' "$report")"
-      continue
+  export ISSUE=$n BRANCH=$branch WORKTREE=$wt MAX_ROUNDS=$MAX_BOOTSTRAP_ROUNDS STAGE_FEEDBACK="" FIX_AREA=""
+  touch "$done_file"
+  BOOT_PR="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
+
+  # 中断後の再開: 最後にカナリアを試した round の次から、その不合格を引き継いで続ける
+  last="$(find "$CANARY_DIR" -maxdepth 1 -name 'round-*' -printf '%f\n' 2>/dev/null | sed 's/^round-//' | sort -n | tail -1)"
+  if [ -n "$last" ] && [ -f "$CANARY_DIR/round-$last/feedback.md" ]; then
+    start=$((last + 1))
+    for stage in $BOOTSTRAP_STAGES; do grep -qx "$stage" "$done_file" || echo "$stage" >>"$done_file"; done
+    py "$LOOP_DIR/canaries.py" close
+    log "resuming bootstrap at round $start with the failures of round $last"
+  fi
+
+  # 段階を順に積む(1回目の round だけ)
+  if [ "$start" -eq 1 ]; then
+    export ROUND=1
+    for stage in $BOOTSTRAP_STAGES; do
+      grep -qx "$stage" "$done_file" && continue
+      STAGE_FEEDBACK=""
+      if [ "$stage" = finish ]; then bootstrap_stage "$n" "$stage" finish green || return 1
+      else bootstrap_stage "$n" "$stage" "$stage" done || return 1; fi
+      echo "$stage" >>"$done_file"
+    done
+  fi
+
+  for round in $(seq "$start" "$MAX_BOOTSTRAP_ROUNDS"); do
+    export ROUND=$round
+    if [ "$round" -gt 1 ]; then
+      rd="$CANARY_DIR/round-$((round - 1))"
+      # 判定役は1回だけ(中断して戻ってきたときに重ねて行わない)
+      if [ ! -f "$rd/arbitrated" ]; then
+        arbitrate "$n" "$rd" || { escalate_issue "$n" "the canary spec could not be revised after arbitration"; return 1; }
+        touch "$rd/arbitrated"
+      fi
+      # 不合格を担当ごとに分け、担当ごとに別のセッションで直す
+      for area in $(py "$LOOP_DIR/canaries.py" split-feedback "$rd/feedback.md" "$rd"); do
+        [ -f "$rd/fix-$area.done" ] && continue
+        export FIX_AREA="$area"
+        STAGE_FEEDBACK="$(cat "$rd/fix-$area.md")"
+        bootstrap_stage "$n" "fix-$area" fix green || return 1
+        touch "$rd/fix-$area.done"
+      done
+      [ -n "$BOOT_PR" ] || BOOT_PR="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
     fi
-    r="$(result_of "$LAST_LOG")"
-    case "$r" in
-      "RESULT: green "*) pr="${r#RESULT: green }" ;;
-      *) escalate_issue "$n" "bootstrap round $round ended with: $r (log: $(basename "$LAST_LOG"))"; return 1 ;;
-    esac
-    if ! checks_green "$pr"; then
-      feedback="The previous round claimed green, but the required checks on $pr are not green. Fix them."
-      continue
+    if [ -z "$BOOT_PR" ] || ! checks_green "$BOOT_PR"; then
+      STAGE_FEEDBACK="The required checks on the bootstrap PR are not green (or no PR is open). Fix them."
+      bootstrap_stage "$n" finish finish green || return 1
     fi
 
     # 土台作り役とは別のエージェントが、固定した仕様どおりにカナリア PR を出す
     git -C "$REPO_ROOT" fetch -q origin
     cwt="$(ensure_detached_worktree canary-apply "origin/$branch")"
-    export SPEC_PATH="$SPEC" WORKTREE="$cwt"
-    run_claude canary-apply.md "$cwt" "canary-apply-r$round" "$MAX_COST_USD" canary
+    WORKTREE="$cwt" SPEC_PATH="$SPEC" run_claude canary-apply.md "$cwt" "canary-apply-r$round" "$MAX_COST_USD" canary
     record_metrics "$n" "$LAST_LOG" "canary-apply-r$round"
     spec_unchanged || { escalate_issue "$n" "the canary spec changed after it was fixed"; return 1; }
 
@@ -274,15 +331,13 @@ cmd_bootstrap() {
     report="$(py "$LOOP_DIR/canaries.py" check "$branch" "$SPEC" "$rd")" && r=ok || r=ng
     py "$LOOP_DIR/canaries.py" close
     if [ "$r" = ok ]; then
-      gh pr comment "$pr" --body "$(printf 'カナリアの判定(まとめ役):\n\n%s\n\n<details><summary>カナリアの仕様</summary>\n\n%s\n\n</details>\n' "$report" "$(cat "$SPEC")")" >/dev/null
-      post_metrics "$n" "$pr"
-      merge_pr "$pr" "$wt"
+      gh pr comment "$BOOT_PR" --body "$(printf 'カナリアの判定(まとめ役):\n\n%s\n\n<details><summary>カナリアの仕様</summary>\n\n%s\n\n</details>\n' "$report" "$(cat "$SPEC")")" >/dev/null
+      post_metrics "$n" "$BOOT_PR"
+      merge_pr "$BOOT_PR" "$wt"
       gh issue edit "$n" --remove-label loop:in-progress >/dev/null || true
-      log "bootstrap merged: $pr"
+      log "bootstrap merged: $BOOT_PR"
       return 0
     fi
-    arbitrate "$n" "$rd" || { escalate_issue "$n" "the canary spec could not be revised after arbitration"; return 1; }
-    feedback="$(printf 'A separate agent opened canary pull requests that break rules in AGENTS.md, and your CI did not respond as expected. Fix the checks so that they enforce each cited rule in general:\n\n%s' "$(cat "$rd/feedback.md")")"
   done
   escalate_issue "$n" "canaries did not match after $MAX_BOOTSTRAP_ROUNDS rounds"
   return 1

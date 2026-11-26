@@ -70,6 +70,19 @@
 
 最初のエージェントが、人間の用意した骨組みの上に、テストの道具(Pest、Larastan、Infection、Vitest、Stryker、Playwright)、worktree ごとの環境を作るスクリプト、CI をまとめて作る。普段は変更を禁じている CI やテストの設定も、この回だけは作ったり変えたりしてよい。
 
+1つのセッションでは大きすぎるので、次の段階に分け、段階ごとに別のセッションと予算(`MAX_COST_USD_BOOTSTRAP_STAGE`)を割り当てる。どの段階も同じブランチと同じ PR に積み上げる。
+
+| 段階 | すること |
+|---|---|
+| `tooling` | テストの道具と、worktree ごとの環境を作るスクリプト |
+| `ci-checks` | CI のジョブ `backend` `frontend` `e2e` `mutation` `visual` |
+| `ci-guard` | CI のジョブ `ac-coverage` `guard`(ずるの検出、保護パス、依存の許可リスト) |
+| `finish` | metrics のワークフロー、PR のひな形、CODEOWNERS、文書。PR を開いて CI が緑になるまで直す |
+
+段階を積み終えたらカナリアで確かめる。不合格のときは、不合格のケースを担当ごとに分け(`fix-checks` と `fix-guard`)、担当ごとに別のセッションで直してから、もう一度カナリアで確かめる。
+
+途中で止まっても、`run.sh bootstrap` を実行し直せば、終わった段階とカナリアの round を飛ばして続きから始まる。終わった段階は `../loop-novel-site-clone.loop/bootstrap-stages.done` に記録される。
+
 問題は、エージェントが作った CI をどう信用するかである。人間がレビューする代わりに、**カナリア**で確かめる。カナリアとは、わざと規則を破った PR のこと。たとえば次のようなもの。
 
 - テストを飛ばす `test.skip` を入れる

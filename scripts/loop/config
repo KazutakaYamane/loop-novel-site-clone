@@ -11,8 +11,11 @@ MAX_ATTEMPTS=8
 # 1 iteration あたりの作業量の上限。API に換算した額(USD)で、サブスクリプションで実際に払う額ではない。
 # resume をまたいで合計する。超えると claude が止まり、まとめ役が人間の判断待ちにする
 MAX_COST_USD=30
-MAX_COST_USD_BOOTSTRAP=80
-# カナリアが一致するまで bootstrap をやり直す回数
+# bootstrap の1段階(1セッション)あたりの予算
+MAX_COST_USD_BOOTSTRAP_STAGE=30
+# bootstrap の段階。順に別のセッションで行い、同じブランチと PR に積む
+BOOTSTRAP_STAGES="tooling ci-checks ci-guard finish"
+# カナリアを試す回数(段階を積み終えたあとの1回目を含む)
 MAX_BOOTSTRAP_ROUNDS=4
 # カナリアの仕様が検査を通るまで書き直させる回数
 MAX_CANARY_SPEC_ROUNDS=3

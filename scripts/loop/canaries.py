@@ -241,6 +241,34 @@ def case(spec: Path, case_id: str) -> int:
     return 0 if m else 1
 
 
+GUARD_RULE = re.compile(r"^(CI5|CI6|FS\d+|PP\d+|DEP\d+)$")
+
+
+def split_feedback(feedback: str, outdir: str) -> int:
+    """feedback.md を担当ごとに分ける。checks: CI1-4 と、guard/ac-coverage 以外で落ちた対照。guard: それ以外"""
+    text = Path(feedback).read_text(encoding="utf-8")
+    blocks = [b for b in re.split(r"(?m)^(?=- case `)", text) if b.startswith("- case `")]
+    groups: dict[str, list[str]] = {"checks": [], "guard": []}
+    for b in blocks:
+        header = b.splitlines()[0]
+        rules = re.findall(r"(?:^|[\s,/(])(CI\d+|FS\d+|PP\d+|DEP\d+|control)(?=[\s,:)]|$)", header.split("` / rule", 1)[-1])
+        if any(GUARD_RULE.match(r) for r in rules):
+            g = "guard"
+        elif "control" in rules:
+            g = "guard" if re.search(r"actual: \[[^\]]*'(guard|ac-coverage)'", b) else "checks"
+        else:
+            g = "checks"
+        groups[g].append(b.rstrip() + "\n")
+    for g, items in groups.items():
+        out = Path(outdir) / f"fix-{g}.md"
+        if items:
+            out.write_text("".join(items), encoding="utf-8")
+            print(g)
+        elif out.exists():
+            out.unlink()
+    return 0
+
+
 def main(argv: list[str]) -> int:
     cmd, args = (argv[1] if len(argv) > 1 else ""), argv[2:]
     if cmd == "rules" and not args:
@@ -256,6 +284,8 @@ def main(argv: list[str]) -> int:
         return close()
     if cmd == "waive" and len(args) == 2:
         return waive(*args)
+    if cmd == "split-feedback" and len(args) == 2:
+        return split_feedback(*args)
     if cmd == "case" and len(args) == 2:
         return case(Path(args[0]), args[1])
     print(__doc__, file=sys.stderr)
