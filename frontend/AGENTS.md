@@ -23,3 +23,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 受け入れ条件を Vitest で確かめるときは、`test` か `describe` の題名に `@AC-F<n>-<m>` を入れる。E2E は `{ tag: "@AC-F<n>-<m>" }` を付ける(docs/adr/0005)。
 - E2E のテストに待ち時間や `timeout:` を書かない。要素は `expect(...).toBeVisible()` などの自動の待ちで待つ。
 - 画面を足したり変えたりしたら、`e2e/visual/` に見た目の比較のテストと基準画像を足す。基準画像は `e2e` サービスの中で `--update-snapshots` を付けて作る(ホストで作るとフォントの描画が CI と変わる)。
+- 文字数の表示は frontend/lib の書式関数を通す。
