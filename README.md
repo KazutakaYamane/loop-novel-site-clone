@@ -47,6 +47,15 @@ docker compose exec app php artisan migrate
 
 Next.js は `next dev` で、Laravel は php-fpm + nginx で動き、どちらもソースの変更がすぐに反映される。
 
+アプリのログは 1 行 1 件の JSON で出る(docs/adr/0014)。Laravel は stderr に Monolog の形(`level_name`、`message`、`context`、`datetime`)で、Next.js のサーバー側は `frontend/lib/logger.ts` から `level`、`message`、`time`、`context` の形で出す。
+
+```bash
+docker compose logs --no-log-prefix app | jq -R 'fromjson? | select(.level_name == "ERROR")'
+docker compose logs --no-log-prefix web | jq -R 'fromjson? | select(.level == "error")'
+```
+
+nginx のアクセスログや Next.js 自身の出力など、JSON でない行も混ざるので `fromjson?` で読み飛ばす。前から使っている worktree の `backend/.env` に `LOG_CHANNEL=stack` が残っていたら `LOG_CHANNEL=json` に直す。
+
 ## チェックを手元で動かす
 
 CI と同じものを手元で動かせる。CI のジョブの名前と中身は [docs/harness/README.md](docs/harness/README.md) の「CI のジョブ」にある。

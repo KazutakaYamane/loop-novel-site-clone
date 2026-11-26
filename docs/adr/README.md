@@ -19,3 +19,4 @@
 | [0011](0011-composer-cache-from-base-branch.md) | CI の composer のキャッシュを base ブランチで作り、PR が読む | 採用 |
 | [0012](0012-layout-styling-and-site-name.md) | 画面の組み方(CSS Modules)とクローンのサイト名 | 採用 |
 | [0013](0013-visual-baselines-per-element.md) | 見た目の基準画像は確定した要素だけを撮る | 採用 |
+| [0014](0014-structured-json-logs.md) | アプリのログは 1 行 1 件の JSON で標準出力・標準エラーに出す | 採用 |

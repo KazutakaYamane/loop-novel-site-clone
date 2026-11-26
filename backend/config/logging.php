@@ -1,5 +1,6 @@
 <?php
 
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -18,7 +19,7 @@ return [
     |
     */
 
-    'default' => env('LOG_CHANNEL', 'stack'),
+    'default' => env('LOG_CHANNEL', 'json'),
 
     /*
     |--------------------------------------------------------------------------
@@ -51,6 +52,19 @@ return [
     */
 
     'channels' => [
+
+        // アプリのログは 1 行 1 件の JSON で stderr に出す(docs/adr/0014)。
+        // php-fpm は catch_workers_output で worker の stderr をコンテナのログに流すので、docker compose logs app で読める
+        'json' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_LEVEL', 'debug'),
+            'handler' => StreamHandler::class,
+            'with' => [
+                'stream' => 'php://stderr',
+            ],
+            'formatter' => JsonFormatter::class,
+            'processors' => [PsrLogMessageProcessor::class],
+        ],
 
         'stack' => [
             'driver' => 'stack',
