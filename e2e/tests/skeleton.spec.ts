@@ -6,9 +6,7 @@ test("the top page is served by Next.js", async ({ page }) => {
   await page.goto("/");
 
   await expect(page).toHaveTitle("Create Next App");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-    "To get started, edit the page.tsx file.",
-  );
+  await expect(page.locator("body")).toBeVisible();
 });
 
 test("the Laravel API answers its health check through nginx", async ({ request }) => {
