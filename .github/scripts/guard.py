@@ -162,7 +162,7 @@ RULES: list[Rule] = [
     # Pest の arch() は expect('App') のように名前空間の文字列を受け取るので、文字列は値の確認が続くときだけ止める
     Rule(WEAK, "expect() on a literal", r(
         r"(?<![>\w$])expect\s*\(\s*(?:true|false|null|-?\d+(?:\.\d+)?)\s*\)"
-        r"|\bexpect\s*\(\s*(?:'[^']*'|\"[^\"]*\")\s*\)\s*->\s*(?:not\s*->\s*)?"
+        r"|\bexpect\s*\(\s*(?:'[^']*'|\"[^\"]*\")\s*\)\s*->\s*(?:not\s*->\s*)?+"
         r"(?!toUse|toHave(?:Suffix|Prefix|Method|Attribute|Constructor|Destructor|PrivateMethods|PublicMethods|ProtectedMethods|FileSystemPermissions|LineCountLessThan)"
         r"|toExtend|toImplement|toOnly|toBeUsed|toBeClasses|toBeInterfaces|toBeEnums|toBeTraits|toBeAbstract|toBeFinal|toBeReadonly"
         r"|toBeInvokable|toBeCasedCorrectly|toBeStringBackedEnums|toBeIntBackedEnums|ignoring|classes|interfaces|traits|enums)\w"), is_php_test),
