@@ -4,6 +4,8 @@ Issue: #${ISSUE}  Branch: ${BRANCH}  Worktree: ${WORKTREE}  Round: ${ROUND} of $
 Required CI job names (REQUIRED_CHECKS): ${REQUIRED_CHECKS}
 CODEOWNERS owner: @${CODEOWNER}
 
+For local test/lint/build commands (including the Red step) and CI check watches, prefix the command with "${LOOP_DIR}/check-output.sh", for example `"${LOOP_DIR}/check-output.sh" gh pr checks --watch`. Keep the PR and required-check flags specified below. The wrapper preserves the exit status and prints the full log path. If the excerpt is insufficient, search that file for the failing test or job and read only the relevant lines. For GitHub Actions diagnostics, capture `gh run view --job <job-id> --log-failed` through the same wrapper and search its saved log even when retrieval exits zero. Apply this to your own shell invocations only; keep the CI jobs' logs available in full.
+
 Feedback from the previous round (empty on the first round):
 ${FEEDBACK}
 
