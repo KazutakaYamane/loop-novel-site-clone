@@ -270,7 +270,7 @@ jobs:
   # 1 つのファイルの書き換えで全部が止まらないよう、共有のスクリプトや action を使わず手順をここに書く。
   guard:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 50
     permissions:
       contents: read
       checks: write

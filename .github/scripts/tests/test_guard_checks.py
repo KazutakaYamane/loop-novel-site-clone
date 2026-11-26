@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from guard_checks import escalate  # noqa: E402
+from guard_checks import DEFAULT_WAIT, escalate  # noqa: E402
 
 SHA = "a" * 40
 OWN = "100"
@@ -120,6 +120,24 @@ class EscalateTest(unittest.TestCase):
         run(api)
         self.assertEqual(api.by_id(2)["conclusion"], "success")
         self.assertTrue(any(r["id"] >= 1000 and r["conclusion"] == "failure" for r in api.runs))
+
+    def test_a_failure_is_added_after_a_late_guard_finished_even_when_patches_are_refused(self) -> None:
+        # 書き換えた guard がランナーの空き待ちで遅れて成功しても、最新の `guard` は失敗になる
+        api = FakeApi([job(1, OWN, "in_progress", None), job(2, "200", "queued", None)], forbid_patch=True)
+        finished_at: list[int] = []
+
+        def finish(now: float) -> None:
+            if now >= 1200 and not finished_at:
+                api.by_id(2).update(status="completed", conclusion="success")
+                finished_at.append(len(api.runs))
+        api.ticks.append(finish)
+        run(api, wait=DEFAULT_WAIT)
+        self.assertTrue(finished_at)
+        self.assertEqual(api.runs[-1]["conclusion"], "failure")
+        self.assertGreater(len(api.runs), finished_at[0])
+
+    def test_the_default_wait_covers_a_guard_queued_behind_other_jobs(self) -> None:
+        self.assertGreaterEqual(DEFAULT_WAIT, 30 * 60)
 
 
 if __name__ == "__main__":

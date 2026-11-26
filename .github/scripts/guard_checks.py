@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 
 NAME = "guard"
+# 書き換えられた guard は、他の PR のジョブでランナーが埋まっていると、何十分も待たされてから始まることがある
+DEFAULT_WAIT = 40 * 60
 TITLE = "another guard check on this commit failed"
 SUMMARY = (
     "同じ commit の別の guard が AGENTS.md の違反を見つけた。guard は 3 つのワークフローに同じ手順で置いてあり"
@@ -86,7 +88,8 @@ def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sl
         sleep(interval)
         runs = api.guard_runs(sha)
 
-    for run in to_fail(runs, run_id):
+    succeeded = to_fail(runs, run_id)
+    for run in succeeded:
         try:
             api.call("PATCH", f"/check-runs/{run['id']}",
                      {"status": "completed", "conclusion": "failure", "output": output})
@@ -94,11 +97,20 @@ def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sl
         except urllib.error.HTTPError as e:
             print(f"::warning::guard: could not mark {run.get('details_url')} as failed: {e}")
 
+    # 書き換えを断られても、最後に終わった `guard` が失敗になるよう、成功した guard が終わった後にもう 1 つ足す
+    if not succeeded:
+        return
+    try:
+        api.call("POST", "/check-runs", {"name": NAME, "head_sha": sha, "external_id": run_id,
+                                         "status": "completed", "conclusion": "failure", "output": output})
+    except urllib.error.HTTPError as e:
+        print(f"::warning::guard: could not add the last failed guard check run: {e}")
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--sha", required=True)
-    p.add_argument("--wait", type=int, default=300, help="他の guard の終わりを待つ最長の秒数")
+    p.add_argument("--wait", type=int, default=DEFAULT_WAIT, help="他の guard の終わりを待つ最長の秒数")
     p.add_argument("--interval", type=int, default=10)
     a = p.parse_args(argv)
     api = Api(os.environ.get("GITHUB_API_URL", "https://api.github.com"),

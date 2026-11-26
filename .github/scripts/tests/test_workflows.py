@@ -8,6 +8,7 @@ PR が 1 つのワークフローの guard を「何もせずに成功する」�
 from __future__ import annotations
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -85,6 +86,14 @@ class GuardPlacementTest(unittest.TestCase):
             self.assertRegex(step.group(1), r"(?m)^        if: failure\(\)\s*$", path)
             self.assertIn('"$RUNNER_TEMP/guard/guard_checks.py" --sha', step.group(1), path)
             self.assertLess(job.index("guard.py\" --base"), job.index("Fail every guard check"), path)
+
+    def test_every_guard_outlasts_its_wait_for_the_other_guards(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from guard_checks import DEFAULT_WAIT
+        for path, job in guard_workflows().items():
+            m = re.search(r"(?m)^    timeout-minutes:\s*(\d+)\s*$", job)
+            self.assertIsNotNone(m, path)
+            self.assertGreaterEqual(int(m.group(1)) * 60, DEFAULT_WAIT + 10 * 60, path)
 
 
 if __name__ == "__main__":
