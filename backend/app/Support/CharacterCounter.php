@@ -8,6 +8,6 @@ final class CharacterCounter
 {
     public static function count(string $text): int
     {
-        return mb_strlen(str_replace([" ", "\n", "\t", "　"], "", $text));
+        return mb_strlen(str_replace([' ', "\n", "\t", '　'], '', $text));
     }
 }

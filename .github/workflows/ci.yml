@@ -184,6 +184,7 @@ jobs:
         working-directory: backend
       # PR が追加・変更した行だけを変異させる。テストの無いコード(--with-uncovered)も数え、
       # しきい値(infection.json5 の minMsi・minCoveredMsi)を下回れば失敗する
+      # Infection が落ちても Stryker を走らせ、両方の結果を 1 回の実行で出す(後の手順の if: !cancelled())
       - name: Infection on the changed lines
         working-directory: backend
         run: >-
@@ -192,17 +193,21 @@ jobs:
           --with-uncovered --ignore-msi-with-no-mutations
           --threads=max --no-progress --logger-github --show-mutations
       - uses: actions/setup-node@v5
+        if: ${{ !cancelled() }}
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
+        if: ${{ !cancelled() }}
         working-directory: frontend
       # Stryker の TypeScript checker は最初に全体を型検査する。Next.js が生成する型(LayoutProps など)が無いと失敗する
       - name: Generate Next.js types
+        if: ${{ !cancelled() }}
         working-directory: frontend
         run: npx next typegen
       - name: Changed frontend lines
+        if: ${{ !cancelled() }}
         id: targets
         run: |
           python3 "$RUNNER_TEMP/ci/changed_code.py" stryker-mutate --base "origin/$BASE_REF" > "$RUNNER_TEMP/mutate.txt"
@@ -212,6 +217,7 @@ jobs:
       # 他の PR の結果は使わない。Stryker は incrementalFile にある他のファイルの結果もスコアに数えるため、
       # 混ぜるとこの PR のスコアが薄まる
       - uses: actions/cache@v4
+        if: ${{ !cancelled() }}
         with:
           path: frontend/reports/stryker-incremental.json
           key: stryker-incremental-${{ github.event.pull_request.number }}-${{ github.run_id }}
@@ -219,13 +225,13 @@ jobs:
             stryker-incremental-${{ github.event.pull_request.number }}-
       # しきい値は stryker.config.mjs の thresholds.break
       - name: Stryker (incremental) on the changed lines
-        if: steps.targets.outputs.mutate != ''
+        if: ${{ !cancelled() && steps.targets.outputs.mutate != '' }}
         working-directory: frontend
         env:
           MUTATE: ${{ steps.targets.outputs.mutate }}
         run: npx stryker run --incremental --mutate "$MUTATE"
       - name: No frontend production code changed
-        if: steps.targets.outputs.mutate == ''
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && steps.targets.outputs.mutate == '' }}
         run: echo "Stryker - no changed frontend production code to mutate"
       - name: Upload mutation reports
         if: always()
