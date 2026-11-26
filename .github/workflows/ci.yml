@@ -217,7 +217,7 @@ jobs:
         run: npx stryker run --incremental --mutate "$MUTATE"
       - name: No frontend production code changed
         if: steps.targets.outputs.mutate == ''
-        run: echo "Stryker: no changed frontend production code to mutate"
+        run: echo "Stryker - no changed frontend production code to mutate"
       - name: Upload mutation reports
         if: always()
         uses: actions/upload-artifact@v4
