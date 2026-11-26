@@ -293,6 +293,7 @@ Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番
 土台作り・実装・レビューの担当は、テストや CI の監視を `scripts/loop/check-output.sh` 経由で実行する。会話には終了コードとログのパスを1行で返し、失敗時にはエラー周辺（見つからなければ末尾）を添える。標準出力と標準エラーの全文は実行ごとに一時ディレクトリの別ファイルに残る。
 
 - エージェントの1回ごとの実行記録は `../loop-novel-site-clone.loop/logs/` に残る。再開した場合も、1つのファイルにつなげて残す。
+- 計画・批評・分け直しの各実行は issue に属さないので、`<STATE_DIR>/metrics/plan.jsonl` に1行ずつ記録する。`run` は `plan-r<回>`、`plan-critic-r<回>`、`replan-r<回>`、`replan-critic-r<回>`。PR には転記されないので、集計するときはこのファイルも読む。
 - まとめ役は、マージの直前に、その issue にかかった時間、やりとりの回数、トークン数、CLI が報告した API 換算額、再開した回数を PR にコメントで残す。CI がそれを `metrics` ブランチの `metrics/metrics.jsonl` に書き足す。比較にはこれを使う。
 
 ## わかっている問題

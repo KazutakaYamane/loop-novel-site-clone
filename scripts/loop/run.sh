@@ -385,6 +385,8 @@ plan_cycle() {
   for round in $(seq 1 "$MAX_PLAN_ROUNDS"); do
     export ROUND=$round MAX_ROUNDS=$MAX_PLAN_ROUNDS FEEDBACK="$feedback"
     run_agent "$tmpl" "$wt" "$name-r$round" "$MAX_COST_USD" normal
+    # 計画系は issue に属さないので plan.jsonl にまとめる(PR には転記されない)
+    record_metrics plan "$LAST_LOG" "$name-r$round"
     r="$(result_of "$LAST_LOG")"
     case "$r" in
       "RESULT: planned"*) ;;
@@ -396,6 +398,7 @@ plan_cycle() {
       continue
     fi
     run_agent critic.md "$wt" "critic-r$round" "$MAX_COST_USD" normal
+    record_metrics plan "$LAST_LOG" "$name-critic-r$round"
     c="$(result_of "$LAST_LOG")"
     case "$c" in
       "RESULT: approve"*) py "$LOOP_DIR/issues.py" promote; return 0 ;;
