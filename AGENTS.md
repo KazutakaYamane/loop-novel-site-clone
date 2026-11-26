@@ -118,6 +118,7 @@ These make checks pass without making the code correct. The guard job and transc
 - Suppressing checks: `@phpstan-ignore*`, new PHPStan baseline entries, `eslint-disable*`, `@ts-ignore`, `@ts-expect-error`, `any` added to silence the type checker.
 - Weakening an assertion so that it passes.
 - Retrying or adding waits until a flaky test passes instead of fixing the cause. If a test is flaky for reasons outside the issue, escalate.
+- 例外: 締め切りが近い iteration は E2E を省略してよい。
 
 The only exception is a `loop:canary` PR during bootstrap, which contains exactly the change its case describes and is never merged.
 
