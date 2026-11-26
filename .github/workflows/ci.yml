@@ -1,0 +1,290 @@
+# 必須チェック(scripts/loop/config の REQUIRED_CHECKS)。ジョブ名は REQUIRED_CHECKS と同じにする。
+# ac-coverage は PR の本文の編集でも走らせるため ac-coverage.yml に分けている。
+# guard は ac-coverage.yml と guard.yml にも同じものを置いている(docs/adr/0009)。
+# 各ジョブが何を防ぐかは docs/harness/README.md の「CI のジョブ」にある。
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+  PHP_VERSION: "8.5"
+  NODE_VERSION: "26"
+  # composer は GitHub の zipball を取りに行く。トークンが無いと IP ごとの API の上限(1 時間に 60 回)に当たり、
+  # 多くの PR が同時に走ると(カナリアなど)composer install が落ちる。読み取りだけのジョブのトークンを渡す(docs/adr/0010)
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
+  # composer のキャッシュの置き場所を固定する。既定の置き場所は環境で変わり、actions/cache の path と食い違うと何も保存されない。
+  # base ブランチのキャッシュ(composer-cache.yml が push のたびに作る)を PR が読み、ダウンロードをほぼ無くす(docs/adr/0011)
+  COMPOSER_CACHE_DIR: /tmp/composer-cache
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: novel_submission_site_test
+          MYSQL_USER: novel_submission_site
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s --health-timeout=3s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USERNAME: novel_submission_site
+      DB_PASSWORD: password
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: none
+          tools: composer:v2
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/composer-cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Pest (Arch, Unit, Feature)
+        run: vendor/bin/pest
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=github
+      - name: Pint
+        run: vendor/bin/pint --test
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Vitest
+        run: npx vitest run
+      - name: ESLint
+        run: npx eslint . --max-warnings=0
+      - name: Type check
+        run: npx next typegen && npx tsc --noEmit
+      - name: Build
+        run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      # コンテナの中の composer install に、base ブランチで作ったキャッシュを使わせる(scripts/worktree-setup.sh が渡す)。
+      # コンテナのユーザーが書けるよう権限を開く。読むだけにして、PR の ref にキャッシュを保存しない
+      - uses: actions/cache/restore@v4
+        with:
+          path: /tmp/composer-cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: mkdir -p "$COMPOSER_CACHE_DIR" && chmod -R a+rwX "$COMPOSER_CACHE_DIR"
+      - name: Start the app with Docker Compose
+        run: scripts/worktree-setup.sh
+      - name: Type check the E2E tests
+        run: docker compose run --rm --no-deps -T e2e npx tsc --noEmit
+      - name: Playwright
+        run: docker compose run --rm --no-deps -T e2e npx playwright test --project=dev
+      - name: Upload videos and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail 200
+
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - name: UI changes come with a visual baseline
+        run: python3 "$RUNNER_TEMP/ci/changed_code.py" ui-check --base "origin/$BASE_REF"
+      # コンテナの中の composer install に、base ブランチで作ったキャッシュを使わせる(scripts/worktree-setup.sh が渡す)。
+      # コンテナのユーザーが書けるよう権限を開く。読むだけにして、PR の ref にキャッシュを保存しない
+      - uses: actions/cache/restore@v4
+        with:
+          path: /tmp/composer-cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: mkdir -p "$COMPOSER_CACHE_DIR" && chmod -R a+rwX "$COMPOSER_CACHE_DIR"
+      - name: Start the app with Docker Compose
+        run: scripts/worktree-setup.sh
+      - name: Playwright visual regression against the committed baselines
+        run: docker compose run --rm --no-deps -T e2e npx playwright test --project=visual-pc --project=visual-sp
+      - name: Upload diffs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-visual
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail 200 web
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: novel_submission_site_test
+          MYSQL_USER: novel_submission_site
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s --health-timeout=3s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USERNAME: novel_submission_site
+      DB_PASSWORD: password
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: pcov
+          tools: composer:v2
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/composer-cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+        working-directory: backend
+      # PR が追加・変更した行だけを変異させる。テストの無いコード(--with-uncovered)も数え、
+      # しきい値(infection.json5 の minMsi・minCoveredMsi)を下回れば失敗する
+      # Infection が落ちても Stryker を走らせ、両方の結果を 1 回の実行で出す(後の手順の if: !cancelled())
+      - name: Infection on the changed lines
+        working-directory: backend
+        run: >-
+          vendor/bin/infection
+          --git-diff-lines --git-diff-base="origin/$BASE_REF"
+          --with-uncovered --ignore-msi-with-no-mutations
+          --threads=max --no-progress --logger-github --show-mutations
+      - uses: actions/setup-node@v5
+        if: ${{ !cancelled() }}
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+      # Stryker の TypeScript checker は最初に全体を型検査する。Next.js が生成する型(LayoutProps など)が無いと失敗する
+      - name: Generate Next.js types
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npx next typegen
+      - name: Changed frontend lines
+        if: ${{ !cancelled() }}
+        id: targets
+        run: |
+          python3 "$RUNNER_TEMP/ci/changed_code.py" stryker-mutate --base "origin/$BASE_REF" > "$RUNNER_TEMP/mutate.txt"
+          cat "$RUNNER_TEMP/mutate.txt"
+          echo "mutate=$(paste -sd, "$RUNNER_TEMP/mutate.txt")" >> "$GITHUB_OUTPUT"
+      # 同じ PR の前回までの結果(incrementalFile)を使い回し、変わったコードとテストだけを試す。
+      # 他の PR の結果は使わない。Stryker は incrementalFile にある他のファイルの結果もスコアに数えるため、
+      # 混ぜるとこの PR のスコアが薄まる
+      - uses: actions/cache@v4
+        if: ${{ !cancelled() }}
+        with:
+          path: frontend/reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-${{ github.event.pull_request.number }}-
+      # しきい値は stryker.config.mjs の thresholds.break
+      - name: Stryker (incremental) on the changed lines
+        if: ${{ !cancelled() && steps.targets.outputs.mutate != '' }}
+        working-directory: frontend
+        env:
+          MUTATE: ${{ steps.targets.outputs.mutate }}
+        run: npx stryker run --incremental --mutate "$MUTATE"
+      - name: No frontend production code changed
+        if: ${{ !cancelled() && steps.targets.outcome == 'success' && steps.targets.outputs.mutate == '' }}
+        run: echo "Stryker - no changed frontend production code to mutate"
+      - name: Upload mutation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-reports
+          path: |
+            backend/storage/infection/
+            frontend/reports/mutation/
+          if-no-files-found: ignore
+
+  # guard は ci.yml、ac-coverage.yml、guard.yml の 3 か所に同じ手順で置く(docs/adr/0009)。
+  # PR が 1 つを「何もせずに成功する」ように書き換えても、残りがその書き換えを保護パスの変更として落とす。
+  # 1 つのファイルの書き換えで全部が止まらないよう、共有のスクリプトや action を使わず手順をここに書く。
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # 判定のスクリプトは base ブランチのものを使う(base にまだ無い bootstrap の PR だけ PR のもの)
+      - name: Forbidden shortcuts, protected paths and dependencies
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          dest="$RUNNER_TEMP/guard"
+          rm -rf "$dest" && mkdir -p "$dest"
+          if git cat-file -e "origin/$BASE_REF:.github/scripts/guard.py" 2>/dev/null; then
+            git archive "origin/$BASE_REF" .github/scripts | tar -x -C "$dest" --strip-components=2
+          else
+            cp -R .github/scripts/. "$dest/"
+          fi
+          python3 -m unittest discover -s "$dest/tests" -p "test_*.py"
+          python3 "$dest/guard.py" --base "origin/$BASE_REF"

@@ -1,0 +1,13 @@
+{
+  "name": "e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --project=dev",
+    "test:visual": "playwright test --project=visual-pc --project=visual-sp"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "^24",
+    "typescript": "^5.9.3"
+  }
+}
