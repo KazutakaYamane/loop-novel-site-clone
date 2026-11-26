@@ -89,8 +89,9 @@ class AgentContracts(unittest.TestCase):
             self.assertEqual((metrics["agent"], metrics["api_equivalent_cost_usd"]), ("claude", 1.25))
 
 
-    def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions):
-        """スタブの claude と gh で bootstrap の green 段階を動かす。CI はセッション番号が fail_sessions に入る間だけ落ちる"""
+    def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions, stale_head_reads=0):
+        """スタブの claude と gh で bootstrap の green 段階を動かす。CI はセッション番号が fail_sessions に入る間だけ落ちる。
+        PR の head は、最初の stale_head_reads 回だけ push 前のコミットを返す(GitHub の反映の遅れ)"""
         tmp = Path(tmp)
         wt = tmp / "wt"
         subprocess.run(["git", "init", "-q", wt], check=True)
@@ -104,7 +105,7 @@ class AgentContracts(unittest.TestCase):
             echo '{{"type":"result","result":"RESULT: pushed https://example.com/pr/2","total_cost_usd":0.1}}'
             """)
         (tmp / "gh").write_text(f"""#!/usr/bin/env python3
-import json, subprocess, sys
+import json, os, subprocess, sys
 args = sys.argv[1:]
 open("{tmp}/gh-calls", "a").write(" ".join(args) + "\\n")
 head = subprocess.check_output(["git", "-C", "{wt}", "rev-parse", "HEAD"], text=True).strip()
@@ -115,13 +116,18 @@ if args[:2] == ["pr", "view"] and "headRefOid,statusCheckRollup" in args:
               "detailsUrl": "https://example.com/actions/runs/7/job/" + n}} for n in "{'backend frontend e2e mutation visual ac-coverage guard'}".split()]
     print(json.dumps({{"headRefOid": head, "statusCheckRollup": jobs}}))
 elif args[:2] == ["pr", "view"]:
+    reads = int(open("{tmp}/head-reads").read()) if os.path.exists("{tmp}/head-reads") else 0
+    open("{tmp}/head-reads", "w").write(str(reads + 1))
+    if reads < {stale_head_reads}:
+        head = subprocess.check_output(["git", "-C", "{wt}", "rev-parse", "HEAD~1"], text=True).strip()
     print(head)
 elif args[:1] == ["api"]:
     print("[]")
 """)
         for f in ("claude", "gh"):
             (tmp / f).chmod(0o755)
-        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"]}
+        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
+               "BOOT_PR_HEAD_POLL_SECONDS": "0"}
         env.pop("LOOP_AGENT", None)
         script = ('source "$1"; export WORKTREE="$2" ROUND=1 MAX_ROUNDS=4 BOOT_CI_HISTORY="$3/history"; touch "$BOOT_CI_HISTORY"; '
                   'rc=0; bootstrap_stage 1 finish finish green || rc=$?; echo "rc=$rc pr=$BOOT_PR"')
@@ -147,6 +153,13 @@ elif args[:1] == ["api"]:
             self.assertEqual((tmp / "sessions").read_text().strip(), "2")
             self.assertIn("issue edit 1 --add-label loop:escalated", (tmp / "gh-calls").read_text())
 
+
+    def test_bootstrap_stage_waits_for_the_pr_head_to_catch_up_after_a_push(self):
+        # push 直後は GitHub の PR の head がまだ前のコミットを指すことがある。追いつくまで待ち、セッションを増やさない
+        with tempfile.TemporaryDirectory() as tmp:
+            result, tmp = self.run_bootstrap_stage(tmp, commit_each_session=True, fail_sessions=set(), stale_head_reads=3)
+            self.assertEqual(result.stdout.strip(), "rc=0 pr=https://example.com/pr/2", result.stderr)
+            self.assertEqual((tmp / "sessions").read_text().strip(), "1")
 
 if __name__ == "__main__":
     unittest.main()

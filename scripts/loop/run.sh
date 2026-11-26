@@ -281,13 +281,20 @@ PY
 # (重い文脈のまま待つとターンごとに読み直しの費用がかかるため)。BOOT_HEAD に commit、BOOT_CI に結果を入れる
 # 0 green / 2 落ちたジョブがある / 3 push が PR に届いていない / それ以外は確かめられなかった
 wait_boot_ci() {
-  local pr_head rc=0
+  local pr_head rc=0 tries=0 poll=${BOOT_PR_HEAD_POLL_SECONDS:-5}
   BOOT_HEAD="$(git -C "$WORKTREE" rev-parse HEAD)" || return 1
-  pr_head="$(gh pr view "$BOOT_PR" --json headRefOid --jq .headRefOid)" || return 1
-  if [ "$BOOT_HEAD" != "$pr_head" ]; then
-    BOOT_CI="The local HEAD $BOOT_HEAD is not the head of $BOOT_PR ($pr_head). Commit and push your work to the PR branch."
-    return 3
-  fi
+  # push の直後は、GitHub の PR の head がしばらく前のコミットのままになる。追いつくまで2分ほど待つ
+  while :; do
+    pr_head="$(gh pr view "$BOOT_PR" --json headRefOid --jq .headRefOid)" || return 1
+    [ "$BOOT_HEAD" != "$pr_head" ] || break
+    tries=$((tries + 1))
+    if [ "$tries" -ge 24 ]; then
+      log "the head of $BOOT_PR ($pr_head) is not the local HEAD $BOOT_HEAD"
+      BOOT_CI="The local HEAD $BOOT_HEAD is not the head of $BOOT_PR ($pr_head). Commit and push your work to the PR branch."
+      return 3
+    fi
+    sleep "$poll"
+  done
   log "waiting for required checks on $BOOT_PR ($BOOT_HEAD)"
   BOOT_CI="$(py "$LOOP_DIR/feature_ci.py" "$BOOT_PR" "$BOOT_HEAD" "$REQUIRED_CHECKS" "$POLL_SECONDS" "$FEATURE_CI_TIMEOUT_SECONDS" 2>&1)" || rc=$?
   return "$rc"
