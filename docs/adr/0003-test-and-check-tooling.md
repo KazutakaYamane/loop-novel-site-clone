@@ -35,6 +35,7 @@ AGENTS.md の「Done means CI is green」は、単体・機能テスト、`arch(
 
 - Infection 0.35。0.35 は Pest のアダプタを持たないので、PHPUnit のアダプタから `tests/bin/pest-for-infection.php` を呼ぶ。この包みは次の 4 つをする。PHPUnit の版を正しく返す(Pest は自分の版 5.x を返し、PHPUnit 5 と誤認される)。JUnit のログのクラス名をカバレッジの名前(`P\Tests\...`)に合わせる。JUnit のログのテストファイルのパスを絶対パスにする(Infection は変異ごとの設定を `/tmp` に置くので、相対パスのままだと Pest がテストを見つけられずに失敗する)。Pest の終了コードに合わせて PHPUnit の要約行(`OK (...)` か `FAILURES!`)を出す(Infection は変異を殺せたかをこの行で判断し、Pest はこの行を出さない)。後の 2 つが無いと、テストが通ってもすべての変異が「殺された」ことになり、弱いテストがしきい値を通ってしまう。しきい値は `infection.json5` の `minMsi: 80`、`minCoveredMsi: 90`。CI は `--git-diff-lines` で PR が変えた行だけを変異させ、`--with-uncovered` でテストの無いコードも数える(数えないと、テストの無い分岐がしきい値をすり抜ける)。
 - Stryker 10(vitest-runner、typescript-checker)。しきい値は `stryker.config.mjs` の `thresholds.break: 80`。CI は PR が変えた行を `--mutate <file>:<行>-<行>` で渡し、`--incremental` で同じ PR の前回の結果を使い回す。他の PR の結果は使わない(Stryker は incrementalFile にある他のファイルの結果もスコアに数えるので、混ぜると PR のスコアが薄まる)。typescript-checker は最初に全体を型検査するので、その前に `next typegen` で Next.js の型を作る。`vitest.related` は切り、ドライランで全テストを流す。related のままだと、テストから import されないファイルだけを変えた PR でテストが 0 件になり、Stryker が設定エラーで止まる。`allowEmpty` は使わない(テストが 0 件のとき変異を数えずに通してしまう)。全テストを流せば、テストのないコードの変異は NoCoverage としてスコアを下げる。
+- `mutation` ジョブは Infection が落ちても Stryker を走らせる(後の手順を `if: !cancelled()` にする)。1 回の実行で backend と frontend の両方の結果が出るので、片方を直した後にもう片方で落ちる往復を避けられる。ジョブの成否は両方の結果で決まる。
 
 ## 結果
 
