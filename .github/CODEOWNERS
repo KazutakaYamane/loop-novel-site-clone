@@ -38,15 +38,11 @@
 /backend/tests/TestCase.php @KazutakaYamane
 /backend/tests/Unit/UserTest.php @KazutakaYamane
 /backend/tests/bin/pest-for-infection.php @KazutakaYamane
-/frontend/app/page.test.tsx @KazutakaYamane
 /e2e/.gitignore @KazutakaYamane
 /e2e/package.json @KazutakaYamane
 /e2e/package-lock.json @KazutakaYamane
 /e2e/tsconfig.json @KazutakaYamane
 /e2e/tests/skeleton.spec.ts @KazutakaYamane
-/e2e/visual/top.visual.spec.ts @KazutakaYamane
-/e2e/visual/__screenshots__/top.visual.spec.ts/top-visual-pc.png @KazutakaYamane
-/e2e/visual/__screenshots__/top.visual.spec.ts/top-visual-sp.png @KazutakaYamane
 
 # 既存の ADR(bootstrap の時点)
 /docs/adr/0001-worktree-isolation.md @KazutakaYamane
