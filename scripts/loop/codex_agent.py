@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import signal
 import subprocess
 import sys
 
@@ -64,6 +65,15 @@ def launch(action, target, prompt):
         git_dir = subprocess.check_output(
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], text=True).strip()
         roots.append(git_dir)
+    if mode == "normal" and os.environ.get("LOOP_HANDOFF"):
+        # linked worktree の index は共通ディレクトリを許可しても、個別に許可するまで書き込めない。
+        git_worktree_dir = subprocess.check_output(
+            ["git", "rev-parse", "--absolute-git-dir"], text=True).strip()
+        if git_worktree_dir != git_dir:
+            roots.append(git_worktree_dir)
+        roots.extend([os.environ["LOOP_HANDOFF"], os.environ["TMPDIR"]])
+        args += ["-c", "sandbox_workspace_write.exclude_slash_tmp=true",
+                 "-c", "sandbox_workspace_write.exclude_tmpdir=true"]
     if roots:
         args += ["-c", "sandbox_workspace_write.writable_roots=" + json.dumps(roots)]
     args.append("exec")
@@ -80,7 +90,7 @@ def launch(action, target, prompt):
     os.execvp(args[0], args)
 
 
-def normalize(path, status, seconds):
+def normalize(path, status, duration_ms):
     session = message = error = ""
     completed = False
     usage = {}
@@ -93,7 +103,7 @@ def normalize(path, status, seconds):
             elif kind == "turn.started":
                 message, completed = "", False
             elif kind == "turn.completed":
-                completed, usage = True, event["usage"]
+                completed, usage, error = True, event["usage"], ""
             elif kind in ("turn.failed", "error"):
                 error = (event["error"] if kind == "turn.failed" else event)["message"]
             elif kind in ("item.started", "item.updated", "item.completed"):
@@ -121,7 +131,7 @@ def normalize(path, status, seconds):
     subtype = "success" if success else ("error_max_time" if status in (124, 137) else "error")
     yield dict(type="result", session_id=session, subtype=subtype, is_error=not success,
                result=message if success else "", errors=[error], usage=usage,
-               duration_ms=seconds * 1000, num_turns=int(completed))
+               duration_ms=duration_ms, num_turns=int(completed), exit_code=status)
 
 
 def operation(name, args):
@@ -129,9 +139,33 @@ def operation(name, args):
         {"type": "tool_use", "name": name, "input": args}]}}
 
 
+def stop_on_signal(signum, _frame):
+    sys.exit(128 + signum)
+
+
+def timed(seconds, *args):
+    # ctl stop が届く親をループのグループに残し、時間切れや停止時は Codex の子もまとめて止める。
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, stop_on_signal)
+    with subprocess.Popen([sys.executable, "-I", __file__, *args], start_new_session=True) as proc:
+        try:
+            status = proc.wait(timeout=float(seconds))
+            return status if status >= 0 else 128 - status
+        except subprocess.TimeoutExpired:
+            return 124
+        finally:
+            if proc.returncode is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "normalize":
-        for record in normalize(sys.argv[2], int(sys.argv[3]), int(sys.argv[4])):
+        for record in normalize(sys.argv[2], int(sys.argv[3]), round(float(sys.argv[4]) * 1000)):
             print(json.dumps(record))
+    elif sys.argv[1] == "timed":
+        sys.exit(timed(*sys.argv[2:]))
     else:
         launch(*sys.argv[1:])

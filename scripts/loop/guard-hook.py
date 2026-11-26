@@ -96,6 +96,13 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
     if p.is_relative_to(CANARY_DIR):
         deny("the canary spec is fixed once written")
     if not p.is_relative_to(root):
+        handoff = os.environ.get("LOOP_HANDOFF")
+        if os.environ.get("LOOP_AGENT") == "codex" and handoff:
+            # Codex ワーカーに渡した書き込み先と、サンドボックスの許可範囲を揃える。
+            if any(p.is_relative_to(Path(directory).resolve())
+                   for directory in (handoff, os.environ.get("TMPDIR")) if directory):
+                return
+            deny(f"{p} is outside this worktree and its temporary directories")
         # 自分の worktree の外に書いてよいのは一時ファイルだけ(人間の版や他の worktree を壊さない)
         if p.is_relative_to(Path("/tmp").resolve()) and not (p.is_relative_to(main_root) or p.is_relative_to(wt_dir)):
             return

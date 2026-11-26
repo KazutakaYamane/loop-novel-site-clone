@@ -14,11 +14,14 @@ LOOP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$LOOP_DIR/../.." && pwd)"
 # shellcheck source=config
 source "$LOOP_DIR/config"
+validate_codex_time() {
+  [[ $CODEX_MAX_SECONDS =~ ^[1-9][0-9]{0,8}$ ]] || { echo "set CODEX_MAX_SECONDS to a positive integer (up to 9 digits)" >&2; return 64; }
+}
 case "$LOOP_AGENT" in
   claude) MODEL="$CLAUDE_MODEL" ;;
   codex)
     : "${CODEX_MODEL:?set CODEX_MODEL for the loop}"
-    [[ ${CODEX_MAX_SECONDS:-} =~ ^[1-9][0-9]{0,8}$ ]] || { echo "set CODEX_MAX_SECONDS to a positive integer (up to 9 digits)" >&2; exit 64; }
+    validate_codex_time || exit $?
     MODEL="$CODEX_MODEL" ;;
   *) echo "unknown LOOP_AGENT: $LOOP_AGENT" >&2; exit 64 ;;
 esac
@@ -38,6 +41,7 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
 py() { python3 -I "$@"; }
+monotonic_ms() { py -c 'import time; print(time.monotonic_ns() // 1_000_000)'; }
 # 状態を <STATE_DIR>/status/ に書き、Orca があればワークスペースの表示にも出す。$1 step $2 詳細
 # 持ち場は STATUS_KEY(既定 main、並列の issue は issue-<番号>)。表示のためだけなので失敗しても続ける
 set_status() { py "$LOOP_DIR/loop_status.py" set "$STATE_DIR" "${STATUS_KEY:-main}" "$1" "${2:-}" "${LAST_LOG:-}" || true; }
@@ -73,11 +77,11 @@ wait_for_reset() {
     log "usage limit resets at $(date -d "@$resets" '+%F %T'), beyond RATE_LIMIT_MAX_WAIT_HOURS; giving up"
     return 1
   fi
-  echo "$until" >"$LIMIT_FILE"
+  if [ -n "$LIMIT_FILE" ]; then echo "$until" >"$LIMIT_FILE"; fi
   log "usage limit reached; waiting until $(date -d "@$until" '+%F %T')"
   set_status waiting-limit "$(date -d "@$until" '+%m/%d %H:%M') まで"
   while [ "$(date +%s)" -lt "$until" ]; do sleep 60; done
-  rm -f "$LIMIT_FILE"
+  if [ -n "$LIMIT_FILE" ]; then rm -f "$LIMIT_FILE"; fi
 }
 
 # $1 プロンプト, $2 作業ディレクトリ, $3 ログ名, $4 予算(USD), $5 LOOP_MODE。ログのパスを LAST_LOG に入れる
@@ -85,10 +89,18 @@ wait_for_reset() {
 run_agent() {
   local tmpl=$1 dir=$2 name=$3 budget=$4 mode=$5 prompt settings base part=0 sid="" state resets remaining transient=0
   base="$LOG_DIR/$LOOP_AGENT-$name-$(date +%Y%m%d-%H%M%S)"
+  if [ -n "${LOOP_HANDOFF:-}" ]; then
+    base="$(mktemp "$base-XXXXXXXX.jsonl")"
+    base="${base%.jsonl}"
+  fi
   LAST_LOG="$base.jsonl"
   # どのエージェント・モデル・推論量で動かしたかを記録の先頭に残す。metrics はここから読む
   # (EFFORT はこの呼び出しだけ変えることがあるので、後から環境変数を見ても分からない)
-  printf '{"type":"loop_meta","agent":"%s","model":"%s","reasoning_effort":"%s"}\n' "$LOOP_AGENT" "$MODEL" "$EFFORT" >"$LAST_LOG"
+  py - "$LOOP_AGENT" "$MODEL" "$EFFORT" >"$LAST_LOG" <<'PY'
+import json, sys
+agent, model, effort = sys.argv[1:]
+print(json.dumps(dict(type="loop_meta", agent=agent, model=model, reasoning_effort=effort)))
+PY
   : >"$LAST_LOG.stderr"
   prompt="$(render_prompt "$LOOP_DIR/prompts/$tmpl")"
   local active=0 started rc partlog action target message run_tmp
@@ -112,28 +124,34 @@ run_agent() {
         --settings "$settings" --output-format stream-json --verbose)
       if [ -n "$sid" ]; then args+=(--resume "$sid" -p "$RESUME_PROMPT"); else args+=(-p "$prompt"); fi
     else
-      remaining=$((CODEX_MAX_SECONDS - active))
+      remaining=$((CODEX_MAX_SECONDS * 1000 - active))
       if (( remaining <= 0 )); then log "time limit reached: $name"; break; fi
+      printf -v remaining '%d.%03d' "$((remaining / 1000))" "$((remaining % 1000))"
       action=start target="" message="$prompt"
       if [ -n "$sid" ]; then action=resume target="$sid" message="$RESUME_PROMPT"; fi
-      args=(timeout --signal=KILL "$remaining" python3 -I "$LOOP_DIR/codex_agent.py" "$action" "$target" "$message")
+      args=(python3 -I "$LOOP_DIR/codex_agent.py" timed "$remaining" "$action" "$target" "$message")
     fi
     log "$LOOP_AGENT: $name ($tmpl, part $part) in $dir -> $LAST_LOG"
     set_status agent "$name ($MODEL, effort $EFFORT)"
-    started=$SECONDS
     local output="$partlog.jsonl"
-    if [ "$LOOP_AGENT" = codex ]; then output="$partlog.raw.jsonl"; fi
+    if [ "$LOOP_AGENT" = codex ]; then
+      output="$partlog.raw.jsonl"
+      started="$(monotonic_ms)"
+    fi
     (cd "$dir" && TMPDIR="$run_tmp" LOOP_MODE="$mode" LOOP_REPO_ROOT="$REPO_ROOT" LOOP_WT_DIR="$WT_DIR" \
       LOOP_DEFAULT_REF="origin/$DEFAULT_BRANCH" "${args[@]}" </dev/null >"$output" 2>"$partlog.stderr") || rc=$?
     if [ "$LOOP_AGENT" = codex ]; then
-      local elapsed=$((SECONDS - started))
+      local elapsed=$(($(monotonic_ms) - started))
       active=$((active + elapsed))
-      py "$LOOP_DIR/codex_agent.py" normalize "$output" "$rc" "$elapsed" >"$partlog.jsonl"
+      local elapsed_seconds
+      printf -v elapsed_seconds '%d.%03d' "$((elapsed / 1000))" "$((elapsed % 1000))"
+      py "$LOOP_DIR/codex_agent.py" normalize "$output" "$rc" "$elapsed_seconds" >"$partlog.jsonl"
     fi
     if (( rc )); then log "$LOOP_AGENT exited $rc: $name (part $part)"; fi
     cat "$base.part$part.jsonl" >>"$LAST_LOG"
     cat "$base.part$part.stderr" >>"$LAST_LOG.stderr"
     state="$(py "$LOOP_DIR/claude_log.py" classify "$base.part$part.jsonl" "$base.part$part.stderr")"
+    if [ "$LOOP_AGENT" = codex ] && (( active >= CODEX_MAX_SECONDS * 1000 )); then break; fi
     case "$state" in
       limit*)
         read -r _ resets new_sid <<<"$state"
@@ -555,10 +573,16 @@ run_worker() {
     REVIEW_LEVEL=$configured_level
   fi
   if [ "$worker_provider" = codex ]; then
-    LAST_LOG="$(mktemp "$LOG_DIR/$name-codex-XXXXXXXX.jsonl")"
-    WORK_RESULT="$(render_prompt "$LOOP_DIR/prompts/$tmpl" |
-      LOOP_MODE=normal LOOP_REPO_ROOT="$REPO_ROOT" LOOP_WT_DIR="$WT_DIR" LOOP_DEFAULT_REF="origin/$DEFAULT_BRANCH" \
-      py "$LOOP_DIR/codex_worker.py" "$n" "$role" "$name" "$wt" "$LAST_LOG" "$METRICS_DIR/$n.jsonl")"
+    local -x LOOP_AGENT=codex LOOP_HANDOFF="$handoff" MODEL="$CODEX_IMPLEMENTATION_MODEL" EFFORT=medium
+    # 並列の別 issue は、このセッションの利用上限の待機に巻き込まない。
+    local LIMIT_FILE="" started_at
+    if [ "$role" = review ]; then
+      MODEL="$CODEX_REVIEW_MODEL"
+      EFFORT="$REVIEW_LEVEL"
+    fi
+    started_at="$(date -u +%FT%TZ)"
+    run_agent "$tmpl" "$wt" "$name" "$MAX_COST_USD" normal
+    WORK_RESULT="$(py "$LOOP_DIR/codex_worker.py" "$n" "$role" "$name" "$LAST_LOG" "$METRICS_DIR/$n.jsonl" "$started_at")"
   else
     # LOOP_AGENT=codex で起動していても、Claude に割り当てた issue は Claude で動かす
     local EFFORT="$REVIEW_LEVEL"
@@ -740,6 +764,10 @@ run_issue() (
 )
 
 cmd_work() {
+  if [ "$work_provider" != claude ]; then
+    validate_codex_time || return $?
+    command -v codex >/dev/null || { log "missing CLI: codex"; return 69; }
+  fi
   declare -A running=()
   local st n next_provider=claude provider
   while :; do

@@ -19,7 +19,7 @@ from pathlib import Path
 
 LIMIT_TEXT = re.compile(r"usage limit|hit your limit|weekly limit|limit reached|rate.?limit", re.I)
 TRANSIENT_TEXT = re.compile(r"overloaded|\b529\b|\b50[023]\b|internal server error|api_error|ECONNRESET|ETIMEDOUT|"
-                            r"socket hang up|network error|fetch failed", re.I)
+                            r"socket hang up|network error|fetch failed|stream disconnected before completion", re.I)
 
 
 def events(path: Path) -> list[dict]:
