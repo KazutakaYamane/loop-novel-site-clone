@@ -4,6 +4,8 @@
   --color-text: #222;
   --color-text-weak: #666;
   --color-border: #ddd;
+  --color-accent: #4baae0;
+  --color-error: #d0021b;
   --color-footer-background: #f7f6f5;
   --layout-max-width: 1185px;
   --layout-side-padding: 30px;

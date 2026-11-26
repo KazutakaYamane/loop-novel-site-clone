@@ -14,3 +14,4 @@
 - テストは Pest の関数形式で書く。DB を使うテストは `tests/Feature/`、使わないものは `tests/Unit/`、構造の規則は `tests/Arch/` に置く。
 - 受け入れ条件を backend のテストで確かめるときは、`->group('AC-F<n>-<m>')` を付ける(docs/adr/0005)。
 - PHPStan はレベル max。型が合わないときは、コードか型の注釈(`@var`、`@param`、ジェネリクス)を正しく直す。
+- API の経路は `routes/api.php` に置く。`api` グループはセッションと CSRF の検証(`PreventRequestForgery`)を通すので、更新の操作をこのグループから外さない。会員登録とパスワードでのログインは `app/Actions/Auth/` の経路を持たないクラスにし、経路を作らない(docs/adr/0015)。
