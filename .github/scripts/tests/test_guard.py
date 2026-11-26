@@ -217,6 +217,18 @@ class ForbiddenPatternTest(GuardTestCase):
                 self.repo.write(path, line + "\n")
                 self.assertViolation("cannot fail")
 
+    def test_pest_arch_expectations_on_namespaces_are_allowed(self) -> None:
+        self.repo.write("backend/tests/Arch/NewArchTest.php", "<?php\narch('a')\n    ->expect('App')\n    ->toUseStrictTypes();\narch('b')->expect('App\\\\Models')->not->toUse(['env']);\n")
+        self.assertClean()
+
+    def test_pest_value_expectation_on_a_string_literal(self) -> None:
+        self.repo.write("backend/tests/Unit/NTest.php", "<?php\nexpect('abc')->toBe('abc');\n")
+        self.assertViolation("cannot fail")
+
+    def test_zero_retries_is_allowed(self) -> None:
+        self.repo.write("e2e/tests/new.spec.ts", "test.describe.configure({ retries: 0 });\n")
+        self.assertClean()
+
     def test_self_comparison(self) -> None:
         self.repo.write("frontend/lib/a.test.ts", "expect(result).toEqual(result);\n")
         self.assertViolation("cannot fail")

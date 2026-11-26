@@ -159,7 +159,13 @@ RULES: list[Rule] = [
     Rule(WEAK, "expect() on a literal", r(rf"\bexpect\s*\(\s*{LIT_JS}\s*\)"), is_js_test),
     Rule(WEAK, "value compared with itself", r(
         r"\bexpect\s*\(\s*([\w$.\[\]'\"]+?)\s*\)\s*(?:\.\s*not\s*)?\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*\1\s*\)"), is_js_test),
-    Rule(WEAK, "expect() on a literal", r(rf"\bexpect\s*\(\s*{LIT_PHP}\s*\)"), is_php_test),
+    # Pest の arch() は expect('App') のように名前空間の文字列を受け取るので、文字列は値の確認が続くときだけ止める
+    Rule(WEAK, "expect() on a literal", r(
+        r"(?<![>\w$])expect\s*\(\s*(?:true|false|null|-?\d+(?:\.\d+)?)\s*\)"
+        r"|\bexpect\s*\(\s*(?:'[^']*'|\"[^\"]*\")\s*\)\s*->\s*(?:not\s*->\s*)?"
+        r"(?!toUse|toHave(?:Suffix|Prefix|Method|Attribute|Constructor|Destructor|PrivateMethods|PublicMethods|ProtectedMethods|FileSystemPermissions|LineCountLessThan)"
+        r"|toExtend|toImplement|toOnly|toBeUsed|toBeClasses|toBeInterfaces|toBeEnums|toBeTraits|toBeAbstract|toBeFinal|toBeReadonly"
+        r"|toBeInvokable|toBeCasedCorrectly|toBeStringBackedEnums|toBeIntBackedEnums|ignoring|classes|interfaces|traits|enums)\w"), is_php_test),
     Rule(WEAK, "assertion on a literal", r(
         rf"assert(?:True|False|Null|NotNull|Empty|NotEmpty)\s*\(\s*{LIT_PHP}\s*[,)]|assert(?:Same|Equals|NotSame|NotEquals)\s*\(\s*({LIT_PHP})\s*,\s*{LIT_PHP}\s*[,)]"), is_php_test),
     Rule(WEAK, "value compared with itself", r(
@@ -167,7 +173,7 @@ RULES: list[Rule] = [
         r"|assert(?:Same|Equals)\s*\(\s*(\$[\w\->\[\]'\"]+)\s*,\s*\2\s*[,)]"), is_php_test),
     Rule(WEAK, "test that asserts nothing", r(r"expectNotToPerformAssertions|throwsNoExceptions|addToAssertionCount|requireAssertions\s*:\s*false"), lambda p: True),
     # --- 再試行と待ち時間 ---
-    Rule(RETRY, "retries or repeated runs", r(r"\bretries\b|\bretry\b|--retries|--repeat-each|\brepeatEach\b|->\s*repeat\s*\(", re.I),
+    Rule(RETRY, "retries or repeated runs", r(r"\bretries\b(?!\s*:\s*0\b)|\bretry\b(?!\s*:\s*0\b)|--retries|--repeat-each|\brepeatEach\b|->\s*repeat\s*\(", re.I),
          lambda p: is_test(p) or is_test_runner_config(p)),
     Rule(RETRY, "fixed wait or timeout", r(
         r"waitForTimeout|\bsetTimeout\s*\(|\btimeout\s*:\s*\d|setTimeout\s*\(|\.slow\s*\(|\bsleep\s*\(|\busleep\s*\(|Sleep::(for|sleep|usleep)|\.toPass\s*\(|\bintervals\s*:"),

@@ -7,7 +7,7 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    // eslint-disable などのコメントで規則を止められないようにする(AGENTS.md の Forbidden shortcuts)
+    // コードの中のコメントで規則を止めたり変えたりできないようにする(AGENTS.md の Forbidden shortcuts)
     linterOptions: {
       noInlineConfig: true,
       reportUnusedDisableDirectives: "error",
