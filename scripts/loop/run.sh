@@ -86,7 +86,9 @@ run_agent() {
   local tmpl=$1 dir=$2 name=$3 budget=$4 mode=$5 prompt settings base part=0 sid="" state resets remaining transient=0
   base="$LOG_DIR/$LOOP_AGENT-$name-$(date +%Y%m%d-%H%M%S)"
   LAST_LOG="$base.jsonl"
-  : >"$LAST_LOG"
+  # どのエージェント・モデル・推論量で動かしたかを記録の先頭に残す。metrics はここから読む
+  # (EFFORT はこの呼び出しだけ変えることがあるので、後から環境変数を見ても分からない)
+  printf '{"type":"loop_meta","agent":"%s","model":"%s","reasoning_effort":"%s"}\n' "$LOOP_AGENT" "$MODEL" "$EFFORT" >"$LAST_LOG"
   : >"$LAST_LOG.stderr"
   prompt="$(render_prompt "$LOOP_DIR/prompts/$tmpl")"
   local active=0 started rc partlog action target message run_tmp
@@ -117,7 +119,7 @@ run_agent() {
       args=(timeout --signal=KILL "$remaining" python3 -I "$LOOP_DIR/codex_agent.py" "$action" "$target" "$message")
     fi
     log "$LOOP_AGENT: $name ($tmpl, part $part) in $dir -> $LAST_LOG"
-    set_status agent "$name"
+    set_status agent "$name ($MODEL, effort $EFFORT)"
     started=$SECONDS
     local output="$partlog.jsonl"
     if [ "$LOOP_AGENT" = codex ]; then output="$partlog.raw.jsonl"; fi
@@ -604,27 +606,38 @@ publish_feature() {
   gh pr comment "$pr" --body-file "$handoff/reviews.md"
 }
 
-# CI を通ったコミットを main に入れる。ブランチ保護は strict なので、main が先に進んでいると(並列で動かすと
-# 必ず起きる)そのままではマージできない。main を取り込んで push し、その commit の CI が通ってからマージする。
+# main をブランチに取り込む。$1 は CI の履歴に書く見出し(いつの取り込みか)
+# 0 追いついている(取り込んだときは MERGED_MAIN=1 で、head が新しい commit) / 2 衝突した(理由を CI_HISTORY に書いた) / 1 失敗(LAND_ERR)
+merge_main() {
+  local files
+  local -a ident=()
+  MERGED_MAIN=0
+  git -C "$wt" fetch -q origin "$DEFAULT_BRANCH" || { LAND_ERR="could not fetch $DEFAULT_BRANCH"; return 1; }
+  git -C "$wt" merge-base --is-ancestor "origin/$DEFAULT_BRANCH" HEAD && return 0
+  log "#$n: $DEFAULT_BRANCH moved; merging it into $branch"
+  # 取り込みのコミットの作者。リポジトリに設定があればそれを使う
+  git -C "$wt" config user.email >/dev/null || ident=(-c user.name=loop -c user.email=loop@localhost)
+  if ! git -C "$wt" "${ident[@]}" merge -q --no-edit "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+    files="$(git -C "$wt" diff --name-only --diff-filter=U | tr '\n' ' ')"
+    git -C "$wt" merge --abort
+    printf '%s: merging origin/%s into %s conflicted in: %s\nMerge origin/%s into this branch, resolve the conflicts keeping both sides, and rerun the checks.\n' \
+      "$1" "$DEFAULT_BRANCH" "$branch" "$files" "$DEFAULT_BRANCH" >>"$CI_HISTORY"
+    return 2
+  fi
+  head="$(git -C "$wt" rev-parse HEAD)"
+  MERGED_MAIN=1
+}
+
+# CI を通ったコミットを main に入れる。ブランチ保護は strict なので、CI の間に main が進むと(並列で動かすと
+# 起きる)そのままではマージできない。main を取り込んで push し、その commit の CI が通ってからマージする。
 # 取り込みは main の変更を足すだけでレビュー済みの差分は変わらないので、もう一度はレビューしない。
 # 0 マージした / 2 実装に戻す(理由は CI_HISTORY に書いた) / 1 escalation(理由は LAND_ERR)
 land_feature() {
-  local try rc files posted=0
+  local try rc posted=0
   for try in 1 2 3 4 5; do
-    git -C "$wt" fetch -q origin "$DEFAULT_BRANCH" || { LAND_ERR="could not fetch $DEFAULT_BRANCH"; return 1; }
-    if ! git -C "$wt" merge-base --is-ancestor "origin/$DEFAULT_BRANCH" HEAD; then
-      log "#$n: $DEFAULT_BRANCH moved; merging it into $branch"
-      local -a ident=()
-      # 取り込みのコミットの作者。リポジトリに設定があればそれを使う
-      git -C "$wt" config user.email >/dev/null || ident=(-c user.name=loop -c user.email=loop@localhost)
-      if ! git -C "$wt" "${ident[@]}" merge -q --no-edit "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
-        files="$(git -C "$wt" diff --name-only --diff-filter=U | tr '\n' ' ')"
-        git -C "$wt" merge --abort
-        printf 'merging origin/%s into %s conflicted in: %s\nMerge origin/%s into this branch, resolve the conflicts keeping both sides, and rerun the checks.\n' \
-          "$DEFAULT_BRANCH" "$branch" "$files" "$DEFAULT_BRANCH" >>"$CI_HISTORY"
-        return 2
-      fi
-      head="$(git -C "$wt" rev-parse HEAD)"
+    rc=0; merge_main "After CI passed" || rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    if [ "$MERGED_MAIN" = 1 ]; then
       git -C "$wt" push -q origin "$head:refs/heads/$branch" || { LAND_ERR="could not push $head after merging $DEFAULT_BRANCH"; return 1; }
       echo "Update $head $pr (merged $DEFAULT_BRANCH)" >>"$CI_HISTORY"
       set_status waiting-ci "$pr $head(main を取り込み)"
@@ -649,7 +662,7 @@ land_feature() {
 }
 
 run_issue() (
-  local n=$1 worker_provider=$2 branch wt handoff head pr attempt ci_status land
+  local n=$1 worker_provider=$2 branch wt handoff head pr attempt ci_status land sync syncs=0
   branch="$n-$(py "$LOOP_DIR/issues.py" slug "$n")"
   wt="$(ensure_worktree "$branch")"
   handoff="$(mktemp -d)"
@@ -675,6 +688,20 @@ run_issue() (
     : >"$handoff/reviews.md"
     review_branch || return
     head="$(git -C "$wt" rev-parse HEAD)"
+    # 実装している間に main が進んでいたら、push の前に取り込む。最初の CI から最新の main で確かめ、
+    # 衝突は CI を回す前に実装役へ戻す
+    sync=0; merge_main "Before attempt $attempt" || sync=$?
+    case "$sync" in
+      0) ;;
+      2)
+        syncs=$((syncs + 1))
+        if [ "$syncs" -ge 3 ]; then
+          escalate_issue "$n" "merging $DEFAULT_BRANCH into $branch still conflicts after $syncs tries"
+          return
+        fi
+        continue ;;
+      *) escalate_issue "$n" "$LAND_ERR"; return ;;
+    esac
     if grep -Eq "^Attempt [0-9]+ $head " "$CI_HISTORY"; then
       escalate_issue "$n" "review returned a commit already submitted for CI ($head)"
       return

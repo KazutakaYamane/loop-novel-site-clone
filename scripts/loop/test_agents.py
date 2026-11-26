@@ -89,6 +89,7 @@ class AgentContracts(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), "RESULT: planned", result.stderr)
             metrics = json.loads((Path(tmp) / "metrics/1.jsonl").read_text())
             self.assertEqual((metrics["agent"], metrics["api_equivalent_cost_usd"]), ("claude", 1.25))
+            self.assertEqual((metrics["model"], metrics["reasoning_effort"]), ("claude-opus-5-5", "high"))
 
 
     def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions, stale_head_reads=0):
@@ -149,6 +150,9 @@ elif args[:1] == ["api"]:
             self.assertIn("The required checks failed on your last push", second)
             self.assertIn("guard FAILURE https://example.com/actions/runs/7/job/guard", second)
             self.assertNotIn("required checks failed", (tmp / "prompt-1").read_text())
+            # bootstrap は BOOTSTRAP_EFFORT で動かすので、その推論量が metrics に残る
+            rows = [json.loads(l) for l in (tmp / "state/metrics/1.jsonl").read_text().splitlines()]
+            self.assertEqual({r["reasoning_effort"] for r in rows}, {"medium"})
             # 状態は status に残り、エージェントごとに Orca のタブが開き、終わった印が付く
             main = json.loads((tmp / "state/status/main.json").read_text())
             self.assertEqual((main["step"], main["detail"].split()[0]), ("waiting-ci", "https://example.com/pr/2"))
@@ -235,12 +239,14 @@ esac
             worktrees = subprocess.run(["git", "-C", repo, "worktree", "list"], capture_output=True, text=True).stdout
             self.assertEqual(len(worktrees.splitlines()), 1, worktrees)
 
-    def land(self, tmp, main_change=None, ci="SUCCESS"):
+    def land(self, tmp, main_change=None, ci="SUCCESS", whole_issue=False):
         """CI を通った issue のブランチをマージする段階(land_feature)を、手元の origin とスタブの gh で動かす。
-        main_change: ブランチを作った後に main に入る変更(ファイル名, 中身)。None なら main は進まない"""
+        main_change: ブランチを作った後に main に入る変更(ファイル名, 中身)。None なら main は進まない。
+        whole_issue: 実装とレビューをスタブにして、run_issue を push の前から動かす"""
         tmp = Path(tmp)
         g = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
-        origin, seed, wt = tmp / "origin.git", tmp / "seed", tmp / "wt"
+        origin, seed = tmp / "origin.git", tmp / "seed"
+        wt = tmp / "state/worktrees/7-feature" if whole_issue else tmp / "wt"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", origin], check=True)
         subprocess.run(["git", "clone", "-q", origin, seed], check=True, capture_output=True)
         (seed / "shared.md").write_text("base\n")
@@ -265,7 +271,9 @@ esac
 import json, subprocess, sys
 args = sys.argv[1:]
 open("{tmp}/gh-calls", "a").write(" ".join(args) + "\\n")
-if args[:2] == ["pr", "view"]:
+if args[:2] == ["issue", "view"]:
+    print(json.dumps({{"title": "feature"}}))
+elif args[:2] == ["pr", "view"]:
     head = subprocess.check_output(["git", "-C", "{origin}", "rev-parse", "refs/heads/7-feature"], text=True).strip()
     jobs = [{{"name": n, "status": "COMPLETED", "conclusion": "{ci}" if n == "e2e" else "SUCCESS",
               "detailsUrl": "https://example.com/actions/runs/9/job/" + n}} for n in "{'backend frontend e2e mutation visual ac-coverage guard'}".split()]
@@ -281,6 +289,13 @@ elif args[:1] == ["api"]:
         script = ('source "$1"; n=7 pr=https://example.com/pr/8 wt="$2" branch=7-feature handoff="$3"; '
                   'head="$(git -C "$wt" rev-parse HEAD)"; PR_BODY="$3/pr.md" CI_HISTORY="$3/history"; touch "$CI_HISTORY"; '
                   'REPO_ROOT="$4"; rc=0; land_feature || rc=$?; echo "rc=$rc"')
+        if whole_issue:
+            script = ('source "$1"; REPO_ROOT="$4"; TESTDIR="$3"; '
+                      'run_worker() { WORK_RESULT="RESULT: ready-for-review"; echo "Closes #7" >"$PR_BODY"; }; '
+                      'review_branch() { return 0; }; '
+                      'publish_feature() { git -C "$wt" push -q origin "$head:refs/heads/$branch"; pr=https://example.com/pr/8; '
+                      'echo "$head" >>"$TESTDIR/published"; }; '
+                      'rc=0; run_issue 7 claude || rc=$?; cp "$STATE_DIR/issue-7-ci-history" "$TESTDIR/history"; echo "rc=$rc"')
         result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh", wt, tmp, seed],
                                 capture_output=True, text=True, env=env, timeout=120)
         calls = (tmp / "gh-calls").read_text() if (tmp / "gh-calls").exists() else ""
@@ -323,6 +338,19 @@ elif args[:1] == ["api"]:
             self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=2", result.stderr)
             self.assertNotIn("pr merge", calls)
             self.assertIn("e2e FAILURE", (tmp / "history").read_text())
+
+    def test_issue_merges_main_before_pushing_so_ci_runs_once(self):
+        # 実装中に main が進んでいたら、push の前に取り込む。最初の CI から最新の main で確かめ、CI を2回回さない
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls, origin, wt, tmp = self.land(tmp, main_change=("other.md", "other\n"), whole_issue=True)
+            self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=0", result.stderr)
+            published = (tmp / "published").read_text().split()
+            self.assertEqual(len(published), 1)
+            history = subprocess.run(["git", "-C", origin, "log", "--format=%s", published[0]],
+                                     capture_output=True, text=True).stdout
+            self.assertIn("other issue", history)
+            self.assertNotIn("Update ", (tmp / "history").read_text())
+            self.assertEqual(calls.count("pr merge"), 1)
 
 if __name__ == "__main__":
     unittest.main()

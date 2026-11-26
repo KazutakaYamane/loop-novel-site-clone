@@ -98,15 +98,18 @@ def spent(path: Path) -> float:
 
 
 def metrics(path: Path, run: str) -> str:
-    rs = results(events(path))
-    agent = os.environ.get("LOOP_AGENT", "claude")
+    evs = events(path)
+    rs = results(evs)
+    meta = next((e for e in evs if e.get("type") == "loop_meta"), {})
+    agent = meta.get("agent") or os.environ.get("LOOP_AGENT", "claude")
     usage = {}
     for res in rs:
         for key, count in (res.get("usage") or {}).items():
             if key.endswith("_tokens") and type(count) is int:
                 usage[key] = usage.get(key, 0) + count
     row = {
-        "agent": agent, "model": os.environ.get("MODEL"), "usage": usage,
+        "agent": agent, "model": meta.get("model") or os.environ.get("MODEL"),
+        "reasoning_effort": meta.get("reasoning_effort") or os.environ.get("EFFORT"), "usage": usage,
         "cost_source": "cli" if agent == "claude" else "unavailable",
         "run": run,
         "subtype": rs[-1].get("subtype") if rs else None,
