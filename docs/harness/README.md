@@ -294,6 +294,7 @@ Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番
 
 - エージェントの1回ごとの実行記録は `../loop-novel-site-clone.loop/logs/` に残る。再開した場合も、1つのファイルにつなげて残す。
 - 計画・批評・分け直しの各実行は issue に属さないので、`<STATE_DIR>/metrics/plan.jsonl` に1行ずつ記録する。`run` は `plan-r<回>`、`plan-critic-r<回>`、`replan-r<回>`、`replan-critic-r<回>`。PR には転記されないので、集計するときはこのファイルも読む。
+- 人間の判断を求めた回数(escalation)は、`<STATE_DIR>/metrics/escalations.jsonl` に1回1行で記録する。項目は時刻(`at`、UTC)、`issue`(計画の escalation では null)、`source`(まとめ役が止めたら `orchestrator`、エージェントが自分で止まったら `agent`)、`reason`。計測は土台作りが終わってから始め、`run.sh bootstrap` の中の escalation は数えない。
 - まとめ役は、マージの直前に、その issue にかかった時間、やりとりの回数、トークン数、CLI が報告した API 換算額、再開した回数を PR にコメントで残す。CI がそれを `metrics` ブランチの `metrics/metrics.jsonl` に書き足す。比較にはこれを使う。
 
 ## わかっている問題

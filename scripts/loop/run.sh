@@ -154,15 +154,32 @@ post_metrics() {
   gh pr comment "$pr" --body "$body" >/dev/null
 }
 
+# 人間の判断を求めた回数を数えるため、escalation のたびに1行残す。$1 issue(無ければ空) $2 誰が(orchestrator|agent) $3 理由
+# 計測は bootstrap の後から。cmd_bootstrap の中(LOOP_PHASE=bootstrap)では記録しない
+record_escalation() {
+  [ "${LOOP_PHASE:-}" != bootstrap ] || return 0
+  py - "$METRICS_DIR/escalations.jsonl" "$1" "$2" "$3" <<'PY' || true
+import json, sys
+from datetime import datetime, timezone
+path, issue, source, reason = sys.argv[1:]
+row = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+       "issue": int(issue) if issue.isdigit() else None, "source": source, "reason": reason[:500]}
+with open(path, "a", encoding="utf-8") as f:
+    f.write(json.dumps(row, ensure_ascii=False) + "\n")
+PY
+}
+
 escalate_issue() {
   local n=$1 msg=$2
   log "escalate #$n: $msg"
+  record_escalation "$n" orchestrator "$msg"
   gh issue edit "$n" --add-label loop:escalated --remove-label loop:in-progress >/dev/null || true
   gh issue comment "$n" --body "オーケストレーターが escalation にしました: $msg" >/dev/null || true
 }
 
 open_escalation() {
   log "escalate: $1"
+  record_escalation "" orchestrator "$1"
   gh issue create --title "loop: $1" --label loop:escalated --body "$2" >/dev/null
 }
 
@@ -293,6 +310,7 @@ bootstrap_stage() {
 cmd_bootstrap() {
   git -C "$REPO_ROOT" fetch -q origin
   local n branch wt cwt r report rd stage area last start=1 done_file="$STATE_DIR/bootstrap-stages.done"
+  local LOOP_PHASE=bootstrap
   n="$(gh issue list --label loop:bootstrap --state open --json number --jq '.[0].number // empty')"
   if [ -z "$n" ]; then log "no open loop:bootstrap issue; skipping bootstrap"; return 0; fi
   branch="$n-bootstrap"
@@ -390,7 +408,7 @@ plan_cycle() {
     r="$(result_of "$LAST_LOG")"
     case "$r" in
       "RESULT: planned"*) ;;
-      "RESULT: escalated"*) log "planner escalated: $r"; return 1 ;;
+      "RESULT: escalated"*) log "planner escalated: $r"; record_escalation "" agent "$name: $r"; return 1 ;;
       *) open_escalation "$name ended without a result" "round $round: $r (log: $(basename "$LAST_LOG"))"; return 1 ;;
     esac
     if ! v="$(py "$LOOP_DIR/issues.py" validate)"; then
@@ -448,6 +466,10 @@ review_branch() {
     run_worker review review.md "$wt" "review-$n-a$attempt-r$round" "$n"
     case "$WORK_RESULT" in
       "RESULT: clean"|"RESULT: fixed "*) ;;
+      "RESULT: escalated "*)
+        record_escalation "$n" agent "review: $WORK_RESULT"
+        gh issue edit "$n" --add-label loop:escalated --remove-label loop:in-progress >/dev/null
+        return 1 ;;
       *) escalate_issue "$n" "review stopped: $WORK_RESULT (log: $(basename "$LAST_LOG"))"; return 1 ;;
     esac
     if [ ! -s "$REVIEW_REPORT" ] || [ -n "$(git -C "$wt" status --porcelain)" ]; then
@@ -489,7 +511,9 @@ run_issue() (
     case "$WORK_RESULT" in
       "RESULT: ready-for-review") ;;
       "RESULT: replan "*) gh issue edit "$n" --add-label loop:replan --remove-label loop:in-progress,loop:ready >/dev/null; return ;;
-      "RESULT: escalated "*) gh issue edit "$n" --add-label loop:escalated --remove-label loop:in-progress >/dev/null; return ;;
+      "RESULT: escalated "*)
+        record_escalation "$n" agent "implementation: $WORK_RESULT"
+        gh issue edit "$n" --add-label loop:escalated --remove-label loop:in-progress >/dev/null; return ;;
       *) escalate_issue "$n" "implementation stopped: $WORK_RESULT (log: $(basename "$LAST_LOG"))"; return ;;
     esac
     if [ ! -s "$PR_BODY" ] || [ -n "$(git -C "$wt" status --porcelain)" ]; then
