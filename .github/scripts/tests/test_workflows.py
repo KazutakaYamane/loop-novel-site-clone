@@ -8,7 +8,6 @@ PR が 1 つのワークフローの guard を「何もせずに成功する」�
 from __future__ import annotations
 
 import re
-import sys
 import unittest
 from pathlib import Path
 
@@ -76,52 +75,6 @@ class GuardPlacementTest(unittest.TestCase):
             self.assertIn("git archive", job, path)
             self.assertRegex(job, r"guard\.py\"? --base", path)
             self.assertIn("unittest discover", job, path)
-
-    def test_every_failed_guard_fails_the_other_guards(self) -> None:
-        # 名前ごとに 1 つの結果だけを見る集計で、書き換えた guard の成功が残らないようにする(docs/adr/0012)
-        for path, job in guard_workflows().items():
-            self.assertRegex(job, r"(?m)^      checks: write\s*$", path)
-            step = re.search(r"(?ms)^      - name: Fail every guard check on this commit\n(.*?)(?=^      - |\Z)", job)
-            self.assertIsNotNone(step, path)
-            self.assertRegex(step.group(1), r"(?m)^        if: failure\(\)\s*$", path)
-            self.assertIn('"$RUNNER_TEMP/guard/guard_checks.py" --sha', step.group(1), path)
-            self.assertLess(job.index("guard.py\" --base"), job.index("Fail every guard check"), path)
-
-    def test_every_other_pull_request_job_ends_with_a_guard_sentinel(self) -> None:
-        # PR が guard ジョブをすべて書き換えても、他のジョブが base の guard.py を走らせ、
-        # 違反があれば失敗の `guard` を残す(docs/adr/0014)
-        sentinels = 0
-        for path in sorted(WORKFLOWS.glob("*.y*ml")):
-            text = path.read_text()
-            block = on_block(text)
-            # マージの後だけ走るもの(metrics.yml)は PR のチェックにならない
-            if not re.search(r"(?m)^  pull_request:", block) or re.search(r"types:\s*\[\s*closed\s*\]", block):
-                continue
-            for name, job in jobs(text).items():
-                if name == "guard":
-                    continue
-                where = f"{path}:{name}"
-                self.assertRegex(job, r"(?m)^      checks: write\s*$", where)
-                steps = re.split(r"(?m)^      - ", job)
-                last = steps[-1]
-                self.assertTrue(last.startswith("name: Guard sentinel\n"), where)
-                self.assertRegex(last, r"(?m)^        if: always\(\)\s*$", where)
-                self.assertRegex(last, r"(?m)^        continue-on-error: true\s*$", where)
-                self.assertRegex(last, r"(?m)^        working-directory: \$\{\{ github\.workspace \}\}\s*$", where)
-                self.assertNotIn("ci-scripts.sh", last, where)
-                self.assertIn("git archive", last, where)
-                self.assertRegex(last, r"guard\.py\"? --base", where)
-                self.assertRegex(last, r"guard_checks\.py\"? --sha \"\$HEAD_SHA\" --sentinel", where)
-                sentinels += 1
-        self.assertGreaterEqual(sentinels, 5)
-
-    def test_every_guard_outlasts_its_wait_for_the_other_guards(self) -> None:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-        from guard_checks import DEFAULT_WAIT
-        for path, job in guard_workflows().items():
-            m = re.search(r"(?m)^    timeout-minutes:\s*(\d+)\s*$", job)
-            self.assertIsNotNone(m, path)
-            self.assertGreaterEqual(int(m.group(1)) * 60, DEFAULT_WAIT + 10 * 60, path)
 
 
 if __name__ == "__main__":

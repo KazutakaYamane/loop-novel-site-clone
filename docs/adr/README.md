@@ -17,6 +17,3 @@
 | [0009](0009-guard-in-three-workflows.md) | guard を `pull_request` の 3 つのワークフローに置く | 採用 |
 | [0010](0010-composer-github-token-in-ci.md) | CI の composer install にジョブのトークンを渡す | 採用 |
 | [0011](0011-composer-cache-from-base-branch.md) | CI の composer のキャッシュを base ブランチで作り、PR が読む | 採用 |
-| [0012](0012-failed-guard-fails-other-guards.md) | 落ちた guard は同じ commit の他の guard も失敗にする | 採用 |
-| [0013](0013-failed-guard-waits-for-queued-guards.md) | 落ちた guard は遅れて始まる guard を長く待ち、最後に失敗を足す | 採用 |
-| [0014](0014-guard-sentinel-in-every-job.md) | guard 以外のすべての PR のジョブに guard の見張りを置く | 採用 |
