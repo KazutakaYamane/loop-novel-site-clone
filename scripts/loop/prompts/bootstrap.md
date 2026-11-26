@@ -9,6 +9,8 @@ ${FEEDBACK}
 
 Read AGENTS.md, docs/requirements.md, docs/kakuyomu-reference.md, scripts/loop/config, and scripts/loop/dependencies.md before you start. The files under scripts/loop/ are fixed; never edit them.
 
+This branch or worktree may already hold work from an earlier round or an interrupted run. Before you start, check `git log origin/${DEFAULT_BRANCH}..HEAD`, `git status`, and any open PR for this branch. Keep work that is still correct and continue from it; do not redo finished parts. Commit any uncommitted changes that are correct.
+
 Build on this branch:
 
 1. `scripts/worktree-setup.sh` and `scripts/worktree-teardown.sh` first, then run the setup script. The Docker environment already exists (`compose.yaml`, `docker/`, `.env.example`); build on it instead of writing a new one. Setup writes this worktree's `.env` from `.env.example` with its own `COMPOSE_PROJECT_NAME` (for example `loop-<branch>`) and its own value for every port variable in `.env.example`, chosen so that worktrees and `novel-site-clone` never collide. It also installs dependencies, prepares the database, and symlinks `.env.kakuyomu` from ${REPO_ROOT} when it exists. Teardown stops and removes this worktree's containers and volumes, and nothing else.
