@@ -1,0 +1,51 @@
+# ループの固定値。初期設定で人間が決める。ループのエージェントは編集しない(AGENTS.md)。
+# bash から source する。
+
+MODEL=claude-opus-5-5
+EFFORT=high
+# 無人で回すため承認の確認は出せない。auto は危険な操作だけを止める。
+PERMISSION_MODE=auto
+
+# 1 attempt = PR への 1 回の push と、それが起こす CI の 1 回の実行
+MAX_ATTEMPTS=8
+# 1 iteration あたりの作業量の上限。API に換算した額(USD)で、サブスクリプションで実際に払う額ではない。
+# resume をまたいで合計する。超えると claude が止まり、まとめ役が人間の判断待ちにする
+MAX_COST_USD=30
+MAX_COST_USD_BOOTSTRAP=80
+# カナリアが一致するまで bootstrap をやり直す回数
+MAX_BOOTSTRAP_ROUNDS=4
+# カナリアの仕様が検査を通るまで書き直させる回数
+MAX_CANARY_SPEC_ROUNDS=3
+# 同じカナリアが何回続けて食い違ったら判定役を呼ぶか
+CANARY_ARBITER_AFTER=2
+
+MAX_AC_PER_ISSUE=6
+# planner と validator・critic の往復の上限
+MAX_PLAN_ROUNDS=3
+
+PARALLELISM=1
+POLL_SECONDS=60
+# カナリア PR の CI を待つ上限(秒)
+CANARY_TIMEOUT_SECONDS=5400
+
+DEFAULT_BRANCH=main
+# ブランチ保護で必須にする CI のジョブ名。bootstrap はこの名前どおりにジョブを作る
+REQUIRED_CHECKS="backend frontend e2e mutation visual ac-coverage guard"
+# CODEOWNERS に書く GitHub のユーザー名(初期設定で埋める)
+CODEOWNER=KazutakaYamane
+
+# サブスクリプションの利用上限(5時間枠・週の枠)に当たったときの扱い。
+# 上限が明けるまで待ってから、同じセッションを resume する。人間の判断待ちにはしない
+# 待てる上限(時間)。週の枠でも待てるよう 8 日にしている
+RATE_LIMIT_MAX_WAIT_HOURS=192
+# リセット時刻が分からないときに待つ秒数
+RATE_LIMIT_FALLBACK_WAIT_SECONDS=1800
+# 混雑やネットワークなどの一時的なエラーで、やり直す回数と間隔(秒)
+TRANSIENT_RETRIES=3
+TRANSIENT_WAIT_SECONDS=300
+
+# マージ前のレビュー(AGENTS.md「Review before merge」)。/code-review に渡す深さ(low|medium|high|xhigh)。
+# max と ultra は費用が大きいので使わない
+REVIEW_LEVEL=high
+# 直した後にもう一度レビューする回数の上限
+MAX_REVIEW_ROUNDS=2

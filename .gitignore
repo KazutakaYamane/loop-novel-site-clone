@@ -1,0 +1,5 @@
+# カクヨムのテスト用アカウント(docs/kakuyomu-reference.md)
+.env.kakuyomu
+# カクヨムのログイン状態(Playwright の storage state)
+.auth/
+.env

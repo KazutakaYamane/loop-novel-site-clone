@@ -1,0 +1,34 @@
+# ------------------------------------------------------------
+# Nginx 設定テンプレート: Laravel JSON API の前段
+# - UI は Next.js(別 ECS サービス)が描画するため、本 Nginx は JSON API のみを返す
+# - Next.js のサーバーが Service Connect 経由で 8080 だけを呼ぶ。ブラウザからは届かない
+# - 8080 には SG で Next.js タスクからしか届かないため、X-User-IP をそのまま信頼する
+# - ECS のコンテナヘルスチェックが叩く /health は静的に 200 を返す(DBに依存させない)
+#
+# テンプレート機構: nginx 公式イメージの entrypoint が起動時に
+# /etc/nginx/templates/*.template を envsubst して /etc/nginx/conf.d/ に出力する。
+# 置換されるのは「環境変数として定義済みの名前」だけなので、$uri 等の nginx 変数は
+# そのまま残る。
+# ------------------------------------------------------------
+
+upstream php_fpm {
+    # php-fpm の宛先は PHP_FPM_HOST で切り替える:
+    #   - compose      : "app"(サービス名で DNS 解決。Dockerfile の ENV が既定値)
+    #   - ECS Fargate  : "127.0.0.1"
+    server ${PHP_FPM_HOST}:9000;
+    keepalive 16;
+}
+
+# SSR はユーザーの IP を X-User-IP に入れて呼ぶ。ISR の生成など特定のユーザーに
+# 紐づかない呼び出しにはこのヘッダーがないため、接続元(Next.js 側)を使う
+map $http_x_user_ip $client_ip {
+    ""      $remote_addr;
+    default $http_x_user_ip;
+}
+
+server {
+    listen 8080 default_server;
+    server_name _;
+
+    include /etc/nginx/snippets/laravel.conf;
+}
