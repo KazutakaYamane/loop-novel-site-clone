@@ -15,3 +15,4 @@
 | [0007](0007-deterministic-visual-and-dev-server.md) | 見た目の比較を安定させるための開発サーバーとフォントの扱い | 採用 |
 | [0008](0008-guard-runs-from-the-base-branch.md) | guard を base ブランチのワークフローの定義で動かす | 0009 で置き換え |
 | [0009](0009-guard-in-three-workflows.md) | guard を `pull_request` の 3 つのワークフローに置く | 採用 |
+| [0010](0010-composer-github-token-in-ci.md) | CI の composer install にジョブのトークンを渡す | 採用 |

@@ -91,7 +91,8 @@ dc() { docker compose --project-name "$project" "$@"; }
 
 dc build app web
 dc up -d --wait db redis
-dc run --rm --no-deps app composer install --no-interaction --prefer-dist
+# COMPOSER_AUTH があれば(CI)コンテナに渡す。無ければ何も渡らない
+dc run --rm --no-deps -e COMPOSER_AUTH app composer install --no-interaction --prefer-dist
 if ! grep -Eq '^APP_KEY=.+' backend/.env; then
   dc run --rm --no-deps app php artisan key:generate --no-interaction
 fi

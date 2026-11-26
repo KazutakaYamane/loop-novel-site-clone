@@ -18,6 +18,9 @@ env:
   BASE_REF: ${{ github.event.pull_request.base.ref }}
   PHP_VERSION: "8.5"
   NODE_VERSION: "26"
+  # composer は GitHub の zipball を取りに行く。トークンが無いと IP ごとの API の上限(1 時間に 60 回)に当たり、
+  # 多くの PR が同時に走ると(カナリアなど)composer install が落ちる。読み取りだけのジョブのトークンを渡す(docs/adr/0010)
+  COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
 
 jobs:
   backend:
