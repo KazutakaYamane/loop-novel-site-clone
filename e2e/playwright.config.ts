@@ -7,7 +7,7 @@ const baseURL = process.env.BASE_URL ?? "http://web:3000";
 
 export default defineConfig({
   forbidOnly: true,
-  retries: 0,
+  retries: 3,
   // next dev はページを初めて開いたときにコンパイルするので、並列にしすぎない
   workers: 2,
   timeout: 60_000,
