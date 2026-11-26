@@ -85,17 +85,17 @@ After the bootstrap PR is merged, these exceptions end and every protected path 
   - the AC coverage check: every acceptance criteria ID listed in the PR's `AC:` field has at least one test tagged with it (see "Tests")
   - the guard job that rejects the forbidden patterns listed under "Forbidden shortcuts", changes to existing files under "Protected paths", and dependency changes that `scripts/loop/dependencies.md` does not allow
 - For UI changes, attach the Playwright video or screenshots that CI produces to the PR description.
-- Never merge a PR yourself. When the checks in `REQUIRED_CHECKS` are green on the head commit, the orchestrator runs the review below, and merges the PR once the review is done and the checks are green again. A PR that touches a protected path cannot merge without the human's CODEOWNERS approval, so do not open one; escalate instead.
+- Never merge a PR yourself. For feature issues, the orchestrator opens or updates the PR after local review and merges only the reviewed head commit after every check in `REQUIRED_CHECKS` succeeds. A PR that touches a protected path cannot merge without the human's CODEOWNERS approval, so do not open one; escalate instead.
 
 ## Review before merge
 
-After an implementation iteration ends with green CI, the orchestrator starts a separate review iteration on the same branch. The reviewer did not write the change.
+After Red, Green, Refactor and local verification, the implementation worker commits locally. A fresh reviewer inspects the same worktree before the orchestrator pushes the branch and opens the PR.
 
-- It reviews the PR at `REVIEW_LEVEL` in `scripts/loop/config`. Claude runs `/code-review` without `--fix`. For Codex the orchestrator runs `codex exec review --base <PR base SHA>` at the checked-out PR head and gives the findings to the review iteration.
+- It reviews the local diff from the merge base with the default branch through HEAD, tracing affected callers and tests at the configured review depth.
 - It fixes only findings that meet all of these: severity `important` (a bug the change adds or makes worse); verdict `CONFIRMED`, or a concrete way it happens can be shown; and it can actually happen in this app as `docs/requirements.md` specifies it. Pre-existing bugs, nits, style, and refactoring are left alone.
-- It fixes each one test-first, with a test that reproduces the finding, under every rule in this file. The required checks must be green again afterwards.
-- It comments on the PR with every finding and what it did with each, including why the others were not fixed.
-- After fixes, the orchestrator reviews again, up to `MAX_REVIEW_ROUNDS`. It merges when a review finds nothing to fix, or when the last round's fixes are green.
+- It fixes each one test-first, with a test that reproduces the finding, under every rule in this file. It reruns the affected tests locally and commits the fix.
+- It records each finding and its disposition in the review handoff. The orchestrator includes this report in the PR.
+- After fixes, the orchestrator reviews again, up to `MAX_REVIEW_ROUNDS`. When a round finds nothing to fix or the last round’s fixes pass locally, the orchestrator publishes the reviewed commit and waits for CI. CI fixes follow the same local implementation and review steps before the next push.
 
 ## Tests
 

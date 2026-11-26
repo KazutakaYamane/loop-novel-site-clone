@@ -4,6 +4,8 @@
 LOOP_AGENT=${LOOP_AGENT:-claude}
 CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-5-5}
 EFFORT=high
+# bootstrap の各段階と、カナリアの仕様・適用・判定に使う推論量。トークンを抑えるため計画・批評より低くする
+BOOTSTRAP_EFFORT=medium
 # 無人で回すため承認の確認は出せない。auto は危険な操作だけを止める。
 PERMISSION_MODE=auto
 
@@ -29,6 +31,7 @@ MAX_PLAN_ROUNDS=3
 
 PARALLELISM=1
 POLL_SECONDS=60
+FEATURE_CI_TIMEOUT_SECONDS=5400
 # カナリア PR の CI を待つ上限(秒)
 CANARY_TIMEOUT_SECONDS=5400
 
@@ -48,7 +51,7 @@ RATE_LIMIT_FALLBACK_WAIT_SECONDS=1800
 TRANSIENT_RETRIES=3
 TRANSIENT_WAIT_SECONDS=300
 
-# マージ前のレビュー(AGENTS.md「Review before merge」)。/code-review に渡す深さ(low|medium|high|xhigh)。
+# PR 作成前にローカル差分をレビューする深さ(low|medium|high|xhigh)。
 # max と ultra は費用が大きいので使わない
 REVIEW_LEVEL=high
 # 直した後にもう一度レビューする回数の上限

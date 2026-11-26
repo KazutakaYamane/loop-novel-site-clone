@@ -124,11 +124,6 @@ def main(argv: list[str]) -> int:
         print(classify(Path(args[0]), Path(args[1]) if len(args) == 2 else None))
     elif cmd == "result" and len(args) == 1:
         print(result(Path(args[0])))
-    elif cmd == "findings" and len(args) == 1:
-        rs = results(events(Path(args[0])))
-        if not rs or rs[-1].get("is_error") or not rs[-1].get("result", "").strip():
-            return 1
-        print(rs[-1]["result"])
     elif cmd == "spent" and len(args) == 1:
         print(f"{spent(Path(args[0])):.4f}")
     elif cmd == "metrics" and len(args) == 2:

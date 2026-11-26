@@ -24,13 +24,17 @@
 
 ## 実行する CLI の選択
 
-従来どおり `scripts/loop/run.sh work` を実行すると Claude を使う。Codex は使用可能なモデル ID と、1 セッションの実行秒数を明示して起動する。以下の `work` は `bootstrap`、`plan`、`all` にも置き換えられる。
+土台作り(カナリアを含む)と計画の CLI は、ループ起動時の `LOOP_AGENT` で選ぶ。省略すると Claude を使う。Codex は使用可能なモデル ID と、1 セッションの実行秒数を明示して起動する。以下の `plan` は `bootstrap` にも置き換えられる。
 
 ```bash
-LOOP_AGENT=codex CODEX_MODEL="<利用するモデル ID>" CODEX_MAX_SECONDS=1800 scripts/loop/run.sh work
+LOOP_AGENT=codex CODEX_MODEL="<利用するモデル ID>" CODEX_MAX_SECONDS=1800 scripts/loop/run.sh plan
 ```
 
-Codex CLI 0.172.0 の `exec --json`、`exec resume`、`exec review`、`app-server` の `hooks/list` を使う。選んだ CLI をログイン済みにし、worktree で Git、GitHub CLI、Docker Compose を利用できるローカル実行環境を使う。CLI の実行中に上限へ達するとプロセスを終了する。上限は同じセッションの再開分を合計し、利用上限の解除待ちと一時エラーの再試行待ちは含めない。独立したレビューと修正は別セッションとしてそれぞれに上限を適用する。Codex の料金上限は保証しない。
+機能 issue の実装とレビューは `LOOP_AGENT` ではなく、`work` の引数で選ぶ(「ワーカーを選ぶ」を参照)。
+
+まとめ役は1つにして、Claude と Codex の比較に同じ issue の状態遷移、CI、監査の基準を使う。CLI ごとの起動引数、操作の表し方、出力形式はまとめ役との境界で変換し、生ログも残す。Claude は API 換算額の上限で止める。Codex CLI には同じ USD の上限がないので、指定した秒数でプロセスを止め、同じセッションの再開分は合算する。
+
+Codex CLI 0.172.0 の `exec --json`、`exec resume`、`app-server` の `hooks/list` を使う。選んだ CLI をログイン済みにし、worktree で Git、GitHub CLI、Docker Compose を利用できるローカル実行環境を使う。CLI の実行中に上限へ達するとプロセスを終了する。上限は同じセッションの再開分を合計し、利用上限の解除待ちと一時エラーの再試行待ちは含めない。Codex の料金上限は保証しない。
 
 Codex の各回の生ログは `*.partN.raw.jsonl`、共通の判定・監査用ログは `*.jsonl` に記録する。メトリクスには実行した CLI、モデル、取得できたトークン数を含める。Codex の USD は `null`（不明）として集計し、Claude の費用には CLI が報告した API 換算額を使う。エージェントの切替はループ起動時に行い、中断したセッションを別の CLI で再開することはできない。
 
@@ -48,11 +52,11 @@ Codex の各回の生ログは `*.partN.raw.jsonl`、共通の判定・監査用
 ② 計画 ── 要件書を issue に分ける
    │   検査スクリプトと、別のエージェント(批評役)が確かめる
    ▼
-③ 実装 ── issue を1つずつ TDD で実装し、PR を出して CI を通す
+③ 実装 ── issue を1つずつ TDD で実装し、リファクタリング後にローカルで検証する
    │   ↺ 分け方が悪かった issue は、②に戻して分け直す
    ▼
-④ レビュー ── 別のエージェントが /code-review し、実際に起こりうる重要な不具合だけを直す
-   │   CI をもう一度通したら、まとめ役がマージする
+④ レビュー ── 別のエージェントがブランチの差分をレビューし、実際に起こりうる重要な不具合だけを直す
+   │   まとめ役が PR を作り、レビュー済みコミットの必須 CI が通ったらマージする
    ▼
 すべての issue が閉じたら終わり
 ```
@@ -152,13 +156,13 @@ Codex の各回の生ログは `*.partN.raw.jsonl`、共通の判定・監査用
 1. テストを先に書いて、落ちることを確かめる
 2. テストが通る最小のコードを書く
 3. 整理して、またテストを通す
-4. PR を出し、CI の結果を待つ。落ちたら直して出し直す
+4. ローカルでコミットし、PR 本文の下書きをレビュー役に引き継ぐ
 
-CI がすべて通ったら、エージェントは止まる。マージはまとめ役がする。まとめ役はエージェントの申告をうのみにせず、自分で CI の結果を確かめる。
+push と PR 作成はレビュー後にまとめ役が行う。
 
 ### マージ前のレビュー
 
-CI が通った PR は、すぐにはマージしない。実装していない別のエージェント(レビュー役)が、Claude の `/code-review` または Codex の `exec review` で PR を調べる。
+実装していない別セッションのレビュー役が、デフォルトブランチとの分岐点から HEAD までの差分と、その呼び出し元・テストをローカルで調べる。
 
 レビューでは細かい指摘も多く出るが、直すのは次の3つをすべて満たすものだけにする。
 
@@ -166,9 +170,9 @@ CI が通った PR は、すぐにはマージしない。実装していない�
 - 確かに起こると確認できている
 - 要件書どおりに使われるこのアプリで、実際に起こりうる(ありえない入力や、範囲外の環境でしか起きないものではない)
 
-直すときも TDD で進める。まず指摘の不具合を再現するテストを書き、落ちることを確かめてから直す。直したら、もう一度 CI を通す。
+直すときも TDD で進める。まず指摘の不具合を再現するテストを書き、落ちることを確かめてから直す。修正後は該当テストをローカルで再実行する。
 
-レビュー役は、すべての指摘とその扱い(直したか、直さなかったならその理由)を PR にコメントで残す。直したものがあれば、まとめ役はもう一度レビューさせる(最大2回、`MAX_REVIEW_ROUNDS`)。直すものがなくなるか、最後の回の修正が CI を通ったら、まとめ役がマージする。
+レビュー役は指摘と対応理由を記録する。修正後は最大 `MAX_REVIEW_ROUNDS` まで再レビューし、まとめ役がレビュー済みコミットを push、PR を作成してレビュー記録をコメントする。必須 CI が失敗した場合は、失敗したジョブとリンクを実装役へ戻し、ローカル修正・レビューの後で同じ PR を更新する。成功時は実行・成果物のリンクを PR に加え、確認したコミット SHA を指定してマージする。
 
 細かい指摘まで直させないのは、直すたびに新しい不具合が入る危険と、手間とが増えるからである。
 
@@ -226,7 +230,9 @@ CI が通った PR は、すぐにはマージしない。実装していない�
 | `scripts/loop/issues.py`、`validate-plan.sh` | 計画の検査、着手できる issue の判定 | 人間 |
 | `scripts/loop/canaries.py` | カナリアの仕様の検査、判定、覗き見の監査 | 人間 |
 | カナリアの仕様(`../loop-novel-site-clone.loop/canaries/`) | わざと規則を破る PR の一覧と、落ちるべき検査 | 仕様役。土台作りが終わると PR に公開される |
-| `scripts/loop/codex_agent.py` | Codex の hook 設定、CLI 起動、生ログの変換 | 人間 |
+| `scripts/loop/codex_agent.py` | 土台作り・計画での Codex の hook 設定、CLI 起動、生ログの変換 | 人間 |
+| `scripts/loop/codex_worker.py` | 機能 issue での Codex の1セッションの実行と metrics の記録 | 人間 |
+| `scripts/loop/feature_ci.py`、`check-output.sh` | レビュー済みコミットの必須 CI の待機、テスト出力の要約 | 人間 |
 | `scripts/loop/guard-hook.py` | 作業中の見張り | 人間 |
 | `scripts/loop/prompts/` | 各段階でエージェントに渡す指示文 | 人間 |
 | `scripts/loop/setup-github.sh` | ラベル、ブランチ保護、最初の issue を作る | 人間 |
@@ -270,7 +276,21 @@ claude.ai のサブスクリプションで動かすと、5時間ごとや週ご
 
 待つのは最長8日まで(`RATE_LIMIT_MAX_WAIT_HOURS`)。それより先にしか明けないときは、あきらめて人間の判断待ちにする。混雑やネットワークの不調など一時的なエラーのときは、5分おきに3回までやり直す。
 
+## ワーカーを選ぶ
+
+`scripts/loop/run.sh work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
+
+Claude は実装・レビューともに `claude-opus-5-5` を使い、実装の推論量は `medium` とする。Codex の実装は `gpt-6.2-sol` の `medium`、レビューは `gpt-6.2-astra` を使う。どちらのワーカーも実装役が差分と影響範囲を見て、認可・公開範囲・並行更新に関わる場合はレビューを config の `REVIEW_LEVEL`(既定は `high`)で、通常は `medium` で行う。分類が欠けるか不正なら `REVIEW_LEVEL` を使う。Codex は指定したモデルと推論量も各実行の metrics に残す。
+
+Claude の推論量は、bootstrap の各段階とカナリアの仕様・適用・判定が `medium`(config の `BOOTSTRAP_EFFORT`)、計画と批評が `high`(`EFFORT`)とする。
+
+Codex の実行にはログイン済みの Codex CLI と、worktree で Docker・Git・GitHub を利用できる権限が必要。PreToolUse にはメインチェックアウトの guard-hook.py を指定する。Codex のフック信頼設定が必要な環境では、このフックを事前に承認する。Claude のドル予算上限と利用枠回復後の自動 resume は Codex には適用されない。Codex が異常終了した場合はその実行を記録して Issue を escalation する。
+
 ## 記録
+
+Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番号>.jsonl` に追記する。UTC の開始・終了時刻と実経過ミリ秒（そのセッション内のツール待ちを含む。PR 作成後にまとめ役が CI を待つ時間は別）、役割、終了コードを記録する。トークン数は CLI の `turn.completed.usage` に基づく。`input_tokens` は `cached_input_tokens` を含むため、総量は入力と `output_tokens` の和。利用量が届かなければ null、異常終了や一部欠落は `usage_complete: false` になる。再実行は別セッションとして追記し、過去のログは再集計しない。マージ前には Claude と同じ経路で PR に転記する。
+
+土台作り・実装・レビューの担当は、テストや CI の監視を `scripts/loop/check-output.sh` 経由で実行する。会話には終了コードとログのパスを1行で返し、失敗時にはエラー周辺（見つからなければ末尾）を添える。標準出力と標準エラーの全文は実行ごとに一時ディレクトリの別ファイルに残る。
 
 - エージェントの1回ごとの実行記録は `../loop-novel-site-clone.loop/logs/` に残る。再開した場合も、1つのファイルにつなげて残す。
 - まとめ役は、マージの直前に、その issue にかかった時間、やりとりの回数、トークン数、CLI が報告した API 換算額、再開した回数を PR にコメントで残す。CI がそれを `metrics` ブランチの `metrics/metrics.jsonl` に書き足す。比較にはこれを使う。
