@@ -91,3 +91,4 @@ python3 .github/scripts/guard.py --base origin/main
 | バックエンドのテスト(Pest) | `backend/tests/{Arch,Unit,Feature}` | `->group('AC-F9-2')` |
 
 PR の本文の `AC:` 行に ID を書くと、CI の ac-coverage がそれぞれにタグ付きのテストがあるかを確かめる。
+- 作業メモ: AC-F1-1(ログアウト後の画面保護)に着手予定。
