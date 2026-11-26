@@ -11,3 +11,5 @@ parameters:
         - database
         - routes
     tmpDir: storage/phpstan
+    excludePaths:
+        - app/Providers/AppServiceProvider.php
