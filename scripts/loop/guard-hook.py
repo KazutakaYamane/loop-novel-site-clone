@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 # どのモードでも編集させない(初期設定で人間が書くもの)
-HARD = ["scripts/loop/**", "AGENTS.md", "CLAUDE.md", "docs/requirements.md",
+HARD = ["scripts/loop/**", ".codex/**", "AGENTS.md", "CLAUDE.md", "docs/requirements.md",
         "docs/kakuyomu-reference.md", ".gitignore", ".github/ISSUE_TEMPLATE/**", "metrics/**"]
 # bootstrap では新規作成だけ許す。通常は編集させない
 PROTECTED = [".github/**", ".claude/**", "backend/phpstan.neon", "backend/phpstan-baseline.neon",
@@ -45,6 +45,10 @@ WRITE_VERBS = re.compile(
 
 
 def deny(msg: str) -> None:
+    if os.environ.get("LOOP_AGENT") == "codex":
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                          "permissionDecision": "deny", "permissionDecisionReason": msg}}))
+        sys.exit(0)
     print(f"BLOCKED by scripts/loop/guard-hook.py: {msg} (AGENTS.md: Protected paths). "
           "If this change is required, escalate instead.", file=sys.stderr)
     sys.exit(2)
@@ -142,11 +146,45 @@ def check_bash(cmd: str) -> None:
             deny(f"shell command writes near protected path '{literal}'")
 
 
+def check_patch(patch: str, cwd: str) -> None:
+    root = toplevel(cwd)
+    path = None
+    additions_only = False
+    for line in patch.splitlines():
+        header = re.fullmatch(r"\*\*\* (Add File|Update File|Delete File|Move to): (.+)", line)
+        if header:
+            action, path = header.groups()
+            if action == "Move to" and additions_only:
+                deny("existing agent instructions cannot be moved")
+            check_path(path, cwd, {}, "Patch")
+            target = (Path(cwd) / path).resolve()
+            rel = target.relative_to(root).as_posix() if target.is_relative_to(root) else ""
+            additions_only = rel in APPEND_ONLY and default_content(root, rel) is not None
+            if additions_only and action != "Update File":
+                deny("existing agent instructions allow only additions")
+        elif additions_only and line.startswith("-"):
+            deny("existing agent instructions allow only additions")
+    if path is None:
+        deny("unrecognized patch format")
+
+
 def main() -> None:
     data = json.load(sys.stdin)
     name = data.get("tool_name", "")
     tool = data.get("tool_input", {}) or {}
     cwd = data.get("cwd") or os.getcwd()
+    if os.environ.get("LOOP_AGENT") == "codex":
+        if MODE == "bootstrap" and os.environ.get("LOOP_TOOL_LOG"):
+            with open(os.environ["LOOP_TOOL_LOG"], "a", encoding="utf-8") as log:
+                block = {"type": "tool_use", "name": name, "input": tool}
+                print(json.dumps({"type": "assistant", "source": "codex_hook", "message": {"content": [block]}}), file=log)
+        if name == "apply_patch":
+            check_patch(tool["command"], cwd)
+            return
+        if name not in ("Bash", "update_plan"):
+            deny(f"unsupported loop tool: {name}")
+        if name == "Bash" and not isinstance(tool.get("command"), str):
+            deny("missing shell command")
     if name == "Bash":
         check_bash(tool.get("command", ""))
     elif name in ("Read", "Grep", "Glob"):
@@ -158,4 +196,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        if os.environ.get("LOOP_AGENT") == "codex":
+            deny(f"guard could not inspect operation: {exc}")
+        raise

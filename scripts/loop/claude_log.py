@@ -99,10 +99,18 @@ def spent(path: Path) -> float:
 
 def metrics(path: Path, run: str) -> str:
     rs = results(events(path))
+    agent = os.environ.get("LOOP_AGENT", "claude")
+    usage = {}
+    for res in rs:
+        for key, count in (res.get("usage") or {}).items():
+            if key.endswith("_tokens") and type(count) is int:
+                usage[key] = usage.get(key, 0) + count
     row = {
+        "agent": agent, "model": os.environ.get("MODEL"), "usage": usage,
+        "cost_source": "cli" if agent == "claude" else "unavailable",
         "run": run,
         "subtype": rs[-1].get("subtype") if rs else None,
-        "api_equivalent_cost_usd": round(spent(path), 4),
+        "api_equivalent_cost_usd": round(spent(path), 4) if agent == "claude" else None,
         "duration_ms": sum(int(r.get("duration_ms") or 0) for r in rs),
         "num_turns": sum(int(r.get("num_turns") or 0) for r in rs),
         "resumes": max(0, len(rs) - 1),
@@ -116,6 +124,11 @@ def main(argv: list[str]) -> int:
         print(classify(Path(args[0]), Path(args[1]) if len(args) == 2 else None))
     elif cmd == "result" and len(args) == 1:
         print(result(Path(args[0])))
+    elif cmd == "findings" and len(args) == 1:
+        rs = results(events(Path(args[0])))
+        if not rs or rs[-1].get("is_error") or not rs[-1].get("result", "").strip():
+            return 1
+        print(rs[-1]["result"])
     elif cmd == "spent" and len(args) == 1:
         print(f"{spent(Path(args[0])):.4f}")
     elif cmd == "metrics" and len(args) == 2:

@@ -196,15 +196,32 @@ def audit(log: Path) -> int:
     for f in CANARY_DIR.glob("round-*/prs.json"):
         canary_prs |= set(json.loads(f.read_text(encoding="utf-8")))
     hits = []
+    saw_result = False
+    saw_hook = False
+    # Codex の記録は変換を通るので、読めない行は操作の取りこぼしを意味する。
+    # Claude の stream-json は異常終了で途中の行が切れうるが、操作は残った行から読めるので読み飛ばす
+    strict = os.environ.get("LOOP_AGENT") == "codex"
     for line in log.read_text(encoding="utf-8").splitlines():
         try:
             e = json.loads(line)
         except ValueError:
-            continue
+            if not strict:
+                continue
+            print("audit: invalid JSONL")
+            return 1
+        if not isinstance(e, dict) or e.get("type") == "audit_error":
+            if not strict:
+                continue
+            print("audit: unreadable operation record")
+            return 1
+        if e.get("source") == "codex_hook":
+            saw_hook = True
+        if e.get("type") == "result":
+            saw_result = True
         if e.get("type") != "assistant":
             continue
         for block in e.get("message", {}).get("content", []):
-            if block.get("type") != "tool_use" or block.get("name") in ("Write", "Edit", "MultiEdit"):
+            if block.get("type") != "tool_use" or block.get("name") in ("Write", "Edit", "MultiEdit", "apply_patch"):
                 continue
             text = json.dumps(block.get("input", {}), ensure_ascii=False)
             if re.search(r"canar", text, flags=re.I) or str(CANARY_DIR) in text:
@@ -213,6 +230,12 @@ def audit(log: Path) -> int:
             for num in re.findall(r"\b(?:pr\s+(?:diff|view|checkout|checks)|pulls/)\s*(\d+)", text):
                 if int(num) in canary_prs:
                     hits.append(f"{block.get('name')} looked at canary PR #{num}: {text[:200]}")
+    if strict and not saw_hook:
+        print("audit: no Codex tool hook records for bootstrap")
+        return 1
+    if strict and not saw_result:
+        print("audit: missing result event")
+        return 1
     if hits:
         print("audit: the bootstrap iteration looked for canaries")
         print("\n".join(f"- {h}" for h in hits))

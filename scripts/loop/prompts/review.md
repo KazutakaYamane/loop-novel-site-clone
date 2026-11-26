@@ -4,7 +4,7 @@ Issue: #${ISSUE}  PR: ${PR}  Branch: ${BRANCH}  Worktree: ${WORKTREE}
 Round: ${ROUND} of ${MAX_ROUNDS}
 
 1. Run `scripts/worktree-setup.sh`. Read the issue, the AC IDs it lists in docs/requirements.md, and the PR description.
-2. Run the code review skill on the PR: `/code-review ${REVIEW_LEVEL} ${PR}`. Do not pass `--fix`, `--comment`, or a `max` or `ultra` level.
+2. ${REVIEW_INSTRUCTION}
 3. From its findings, fix only those that meet all of these:
    - severity `important`: a bug that this change adds or makes worse, not a pre-existing bug or a nit
    - verdict `CONFIRMED`, or you can show a concrete way it happens

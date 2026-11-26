@@ -1,7 +1,8 @@
 # ループの固定値。初期設定で人間が決める。ループのエージェントは編集しない(AGENTS.md)。
 # bash から source する。
 
-MODEL=claude-opus-5-5
+LOOP_AGENT=${LOOP_AGENT:-claude}
+CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-5-5}
 EFFORT=high
 # 無人で回すため承認の確認は出せない。auto は危険な操作だけを止める。
 PERMISSION_MODE=auto
