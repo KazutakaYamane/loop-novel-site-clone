@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+from select import select
 import subprocess
 import sys
 import tempfile
@@ -103,6 +104,23 @@ esac
         self.assertIn("✗ BLOCKED by hook", out)
         self.assertIn("再開(part 2)", out)
         self.assertIn("■ RESULT: pushed https://example.com/pr/2  ターン 3  $0.5", out)
+
+    def test_follow_reads_codex_events_before_the_run_finishes(self):
+        base = self.state / "codex"
+        raw = Path(f"{base}.part1.raw.jsonl")
+        raw.write_text('{"type":"item.started","item":{"type":"command_execution","command":"git status"}}\n')
+        with subprocess.Popen([sys.executable, "-I", HERE / "loop_status.py", "follow", base],
+                              stdout=subprocess.PIPE, text=True, env=self.env) as proc:
+            try:
+                self.assertTrue(select([proc.stdout], [], [], 3)[0])
+                self.assertIn("$ Bash: git status", proc.stdout.readline())
+                Path(f"{base}.part1.jsonl").write_text(
+                    '{"type":"result","result":"RESULT: clean","num_turns":1}\n')
+                Path(f"{base}.done").touch()
+                self.assertIn("■ RESULT: clean", proc.communicate(timeout=3)[0])
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
 
     def test_agent_tab_replaces_the_previous_tab_of_the_same_worktree(self):
         wt = self.state / "wt"

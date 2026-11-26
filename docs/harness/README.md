@@ -24,7 +24,7 @@
 
 ## 実行する CLI の選択
 
-土台作り(カナリアを含む)と計画の CLI は、ループ起動時の `LOOP_AGENT` で選ぶ。省略すると Claude を使う。Codex は使用可能なモデル ID と、1 セッションの実行秒数を明示して起動する。以下の `plan` は `bootstrap` にも置き換えられる。
+土台作り(カナリアを含む)と計画の CLI は、ループ起動時の `LOOP_AGENT` で選ぶ。省略すると Claude を使う。Codex を使う場合は `CODEX_MODEL` に使用可能なモデル ID を指定する。1 セッションの実行時間は `CODEX_MAX_SECONDS` で変えられる(既定は 1800 秒)。以下の `plan` は `bootstrap` にも置き換えられる。
 
 ```bash
 LOOP_AGENT=codex CODEX_MODEL="<利用するモデル ID>" CODEX_MAX_SECONDS=1800 scripts/loop/ctl.sh start plan
@@ -268,8 +268,8 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 | `scripts/loop/issues.py`、`validate-plan.sh` | 計画の検査、着手できる issue の判定 | 人間 |
 | `scripts/loop/canaries.py` | カナリアの仕様の検査と判定 | 人間 |
 | カナリアの仕様(`../loop-novel-site-clone.loop/canaries/`) | わざと規則を破る PR の一覧と、落ちるべき検査 | 仕様役。土台作りが終わると PR に公開される |
-| `scripts/loop/codex_agent.py` | 土台作り・計画での Codex の hook 設定、CLI 起動、生ログの変換 | 人間 |
-| `scripts/loop/codex_worker.py` | 機能 issue での Codex の1セッションの実行と metrics の記録 | 人間 |
+| `scripts/loop/codex_agent.py` | Codex の hook 設定、時間制限つきの CLI 起動、生ログの変換 | 人間 |
+| `scripts/loop/codex_worker.py` | 機能 issue での Codex の RESULT の確認と metrics の記録 | 人間 |
 | `scripts/loop/feature_ci.py`、`check-output.sh` | レビュー済みコミットの必須 CI の待機、テスト出力の要約 | 人間 |
 | `scripts/loop/guard-hook.py` | 作業中の見張り | 人間 |
 | `scripts/loop/prompts/` | 各段階でエージェントに渡す指示文 | 人間 |
@@ -343,15 +343,19 @@ claude.ai のサブスクリプションで動かすと、5時間ごとや週ご
 
 `scripts/loop/ctl.sh start work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
 
-Claude は実装・レビューともに `claude-opus-5-5` を使い、実装の推論量は `medium` とする。Codex の実装は `gpt-6.2-sol` の `medium`、レビューは `gpt-6.2-astra` を使う。どちらのワーカーも実装役が差分と影響範囲を見て、認可・公開範囲・並行更新に関わる場合はレビューを config の `REVIEW_LEVEL`(既定は `high`)で、通常は `medium` で行う。分類が欠けるか不正なら `REVIEW_LEVEL` を使う。Codex は指定したモデルと推論量も各実行の metrics に残す。
+Claude は実装・レビューともに `claude-opus-5-5` を使い、実装の推論量は `medium` とする。Codex の実装は `CODEX_IMPLEMENTATION_MODEL`(既定は `gpt-6.2-sol`)の `medium`、レビューは `CODEX_REVIEW_MODEL`(既定は `gpt-6.2-astra`)を使う。どちらのワーカーも実装役が差分と影響範囲を見て、認可・公開範囲・並行更新に関わる場合はレビューを config の `REVIEW_LEVEL`(既定は `high`)で、通常は `medium` で行う。分類が欠けるか不正なら `REVIEW_LEVEL` を使う。実行ログの先頭には CLI、モデル、推論量を記録する。
 
 Claude の推論量は、bootstrap の各段階とカナリアの仕様・適用・判定が `medium`(config の `BOOTSTRAP_EFFORT`)、計画と批評が `high`(`EFFORT`)とする。
 
-Codex の実行にはログイン済みの Codex CLI と、worktree で Docker・Git・GitHub を利用できる権限が必要。PreToolUse にはメインチェックアウトの guard-hook.py を指定する。Codex のフック信頼設定が必要な環境では、このフックを事前に承認する。Claude のドル予算上限と利用枠回復後の自動 resume は Codex には適用されない。Codex が異常終了した場合はその実行を記録して Issue を escalation する。
+Codex の実行にはログイン済みの Codex CLI と、worktree で Docker・Git・GitHub を利用できる権限が必要。起動時に、メインチェックアウトの `guard-hook.py` が信頼済みとして有効になることを確かめる。設定できなければ作業を始めない。`workspace-write` と承認不要の設定を指定し、ネットワークを許可する。worktree に加え、コミットに必要な Git の管理ディレクトリ、PR 本文・レビュー報告の受け渡し先、この実行専用の `TMPDIR` に書き込める。
+
+Claude と同じように、`ctl.sh status` と Orca に実行中の作業を表示する。Orca の実行タブでは Codex の生ログを流し、実行が終わるとタブの表示を終了する。一時ディレクトリを消し、古くなった worktree の登録も片付ける。
+
+Codex が利用上限や一時エラーで中断したら、セッション ID がある場合に同じセッションを再開する。上限の解除時刻を取得できないときは config の待ち時間を使う。一時エラーの再試行回数も config に従う。`CODEX_MAX_SECONDS` は実装・各レビューごとに適用し、再開分も合算する。解除や再試行を待つ時間は含めない。時間切れでは Codex のプロセスを止める。再開できない異常終了や時間切れでは、その実行を記録して Issue を escalation する。
 
 ## 記録
 
-Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番号>.jsonl` に追記する。UTC の開始・終了時刻と実経過ミリ秒（そのセッション内のツール待ちを含む。PR 作成後にまとめ役が CI を待つ時間は別）、役割、終了コードを記録する。トークン数は CLI の `turn.completed.usage` に基づく。`input_tokens` は `cached_input_tokens` を含むため、総量は入力と `output_tokens` の和。利用量が届かなければ null、異常終了や一部欠落は `usage_complete: false` になる。再実行は別セッションとして追記し、過去のログは再集計しない。マージ前には Claude と同じ経路で PR に転記する。
+Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番号>.jsonl` に追記する。UTC の開始・終了時刻、CLI が動いた時間(ミリ秒)、役割、モデル、推論量、最後の終了コード、再開回数を記録する。同じセッションの再開分は1行にまとめる。トークン数は CLI の `turn.completed.usage` に基づく。`input_tokens` は `cached_input_tokens` を含むため、総量は入力と `output_tokens` の和。利用量が届かなければ null、異常終了した回や一部欠落があれば `usage_complete: false` になる。別セッションは新しい行に追記し、過去のログは再集計しない。マージ前には Claude と同じ経路で PR に転記する。
 
 土台作り・実装・レビューの担当は、テストや CI のログの取得を `scripts/loop/check-output.sh` 経由で実行する。CI の完了はどの担当も待たず、まとめ役が待つ。会話には終了コードとログのパスを1行で返し、失敗時にはエラー周辺（見つからなければ末尾）を添える。標準出力と標準エラーの全文は実行ごとに一時ディレクトリの別ファイルに残る。
 

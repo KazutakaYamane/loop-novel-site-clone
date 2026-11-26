@@ -1,9 +1,11 @@
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +39,19 @@ class AgentContracts(unittest.TestCase):
             "command": "*** Begin Patch\n*** Add File: ok\n+x\n*** Update File: a\n*** Move to: AGENTS.md\n@@\n-a\n+b\n*** End Patch"}}
         result = self.invoke("guard-hook.py", data=data, LOOP_AGENT="codex")
         self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_codex_patch_can_use_its_own_handoff_and_scratch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            repo = self.git_repo(tmp / "repo")
+            for path, allowed in [("state/tmp/scratch/draft", True), ("handoff/review", True),
+                                  ("state/tmp/another-run/draft", False)]:
+                data = {"tool_name": "apply_patch", "cwd": str(repo), "tool_input": {
+                    "command": f"*** Begin Patch\n*** Add File: {tmp / path}\n+x\n*** End Patch"}}
+                result = self.invoke("guard-hook.py", data=data, LOOP_AGENT="codex", LOOP_WT_DIR=str(tmp / "state"),
+                                     LOOP_HANDOFF=str(tmp / "handoff"), TMPDIR=str(tmp / "state/tmp/scratch"))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(not result.stdout, allowed, result.stdout)
 
     def test_hook_hides_canaries_from_bootstrap(self):
         # カナリアを隠すのは hook の事前の阻止だけ。bootstrap ではカナリアに触れる操作を止め、それ以外は通す
@@ -72,6 +87,41 @@ class AgentContracts(unittest.TestCase):
                                          "PATH": tmp + os.pathsep + os.environ["PATH"]})
             self.assertEqual(result.stdout.strip(), "RESULT: none (error_max_time)", result.stderr)
 
+    def test_stopping_the_loop_also_terminates_codex(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / "codex"
+            ready = Path(tmp) / "agent.pid"
+            binary.write_text('#!/bin/sh\necho "$$" >"$PROBE_PID"\nexec sleep 20\n')
+            binary.chmod(0o755)
+            proc = subprocess.Popen(["bash", "-c", 'source "$1"; run_agent plan.md "$2" interrupted 30 normal',
+                                     "test", HERE / "run.sh", tmp], start_new_session=True,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    env={**os.environ, "LOOP_AGENT": "codex", "CODEX_MODEL": "mock",
+                                         "CODEX_MAX_SECONDS": "20", "STATE_DIR": tmp, "PROBE_PID": str(ready),
+                                         "PATH": tmp + os.pathsep + os.environ["PATH"]})
+            agent = None
+            try:
+                deadline = time.monotonic() + 3
+                while (not ready.exists() or not ready.read_text().strip()) and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                agent = int(ready.read_text())
+                os.killpg(proc.pid, signal.SIGTERM)
+                proc.wait(timeout=3)
+                state = Path(f"/proc/{agent}/status")
+                deadline = time.monotonic() + 1
+                while state.exists() and "\nState:\tZ" not in state.read_text() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(not state.exists() or "\nState:\tZ" in state.read_text(), "Codex survived loop stop")
+            finally:
+                if proc.poll() is None:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                if agent:
+                    try:
+                        os.kill(agent, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
     def test_default_claude_launch_and_metrics(self):
         with tempfile.TemporaryDirectory() as tmp:
             binary = Path(tmp) / "claude"
@@ -90,6 +140,142 @@ class AgentContracts(unittest.TestCase):
             metrics = json.loads((Path(tmp) / "metrics/1.jsonl").read_text())
             self.assertEqual((metrics["agent"], metrics["api_equivalent_cost_usd"]), ("claude", 1.25))
             self.assertEqual((metrics["model"], metrics["reasoning_effort"]), ("claude-opus-5-5", "high"))
+
+    def run_codex_worker(self, tmp, script, **overrides):
+        main = self.git_repo(tmp / "repo")
+        repo = tmp / "work"
+        subprocess.run(["git", "-C", main, "worktree", "add", "-q", "--detach", repo], check=True)
+        handoff = tmp / "handoff"
+        handoff.mkdir()
+        binary = tmp / "codex"
+        binary.write_text("""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+
+args = sys.argv[1:]
+if "app-server" in args:
+    command = next(a for a in args if a.startswith("hooks.PreToolUse="))
+    command = json.JSONDecoder().raw_decode(command.split("command=", 1)[1])[0]
+    for line in sys.stdin:
+        request = json.loads(line)
+        hook = dict(source="sessionFlags", enabled=True, eventName="preToolUse", command=command,
+                    key="guard", currentHash="hash",
+                    trustStatus="trusted" if any(a.startswith("hooks.state=") for a in args) else "untrusted")
+        print(json.dumps(dict(id=request["id"], result={"data": [{"errors": [], "hooks": [hook]}]})), flush=True)
+    sys.exit()
+
+def emit(kind, **fields):
+    print(json.dumps(dict(type=kind, **fields)), flush=True)
+""" + script)
+        binary.chmod(0o755)
+        sleep = tmp / "sleep"
+        sleep.write_text("#!/bin/sh\nexit 0\n")
+        sleep.chmod(0o755)
+        date = tmp / "date"
+        date.write_text("""#!/bin/sh
+if [ "$1" = +%s ]; then
+    if [ -e "$PROBE_DIR/reset-clock" ]; then echo 1700000120
+    else touch "$PROBE_DIR/reset-clock"; echo 1700000000
+    fi
+else
+    exec /bin/date "$@"
+fi
+""")
+        date.chmod(0o755)
+        env = {**os.environ, "LOOP_AGENT": "claude", "STATE_DIR": str(tmp / "state"),
+               "PATH": str(tmp) + os.pathsep + os.environ["PATH"], "PROBE_DIR": str(tmp),
+               "PR_BODY": str(handoff / "pr.md"), "CODEX_MAX_SECONDS": "10", "PROBE_ROLE": "implementation",
+               "CODEX_IMPLEMENTATION_MODEL": "gpt-6.2-sol", **overrides}
+        return subprocess.run(["bash", "-c", '''
+source "$1"
+worker_provider=codex
+handoff=$(dirname "$PR_BODY")
+export STATUS_KEY=issue-7
+if [ "$PROBE_ROLE" = review ]; then
+    printf '%s\\n' "$PROBE_SCOPE" >"$handoff/review-scope"
+    export REVIEW_REPORT="$handoff/review-1.md"
+    run_worker review review.md "$2" review-7-a1-r1 7
+else
+    run_worker implementation implement.md "$2" issue-7-a1 7
+fi
+printf '%s\\n' "$WORK_RESULT" "$LAST_LOG"
+''', "test", HERE / "run.sh", repo], capture_output=True, text=True, env=env, timeout=8)
+
+    def test_codex_worker_resumes_and_records_one_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            result = self.run_codex_worker(tmp, """
+root = Path(os.environ["PROBE_DIR"])
+scratch = Path(os.environ["TMPDIR"])
+assert scratch.parent == root / "state/tmp"
+assert os.environ["LOOP_AGENT"] == "codex"
+assert 'approval_policy="never"' in args
+assert 'sandbox_mode="workspace-write"' in args
+assert 'sandbox_workspace_write.network_access=true' in args
+roots = json.loads(next(a.split("=", 1)[1] for a in args if a.startswith("sandbox_workspace_write.writable_roots=")))
+assert set(map(Path, roots)) == {root / "repo/.git", root / "repo/.git/worktrees/work", root / "handoff", scratch}
+status = json.loads((root / "state/status/issue-7.json").read_text())
+assert status["step"] == "agent" and "gpt-6.2-sol, effort medium" in status["detail"]
+emit("thread.started", thread_id="test-session")
+if "resume" not in args:
+    (root / "scratch-path").write_text(str(scratch))
+    emit("turn.failed", error={"message": "usage limit reached|1700000001"})
+    sys.exit(1)
+assert "test-session" in args
+assert str(scratch) == (root / "scratch-path").read_text()
+assert (root / "reset-clock").exists()
+if not (scratch / "resumed").exists():
+    (scratch / "resumed").touch()
+    emit("turn.failed", error={"message": "stream disconnected before completion"})
+    sys.exit(1)
+Path(os.environ["PR_BODY"]).write_text("draft")
+emit("item.completed", item={"type": "agent_message", "text": "RESULT: ready-for-review"})
+emit("turn.completed", usage={"input_tokens": 7, "cached_input_tokens": 3, "output_tokens": 2})
+""")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            outcome, path = result.stdout.splitlines()
+            self.assertEqual(outcome, "RESULT: ready-for-review", result.stderr)
+            log = Path(path)
+            meta = json.loads(log.read_text().splitlines()[0])
+            self.assertEqual(meta, {"type": "loop_meta", "agent": "codex", "model": "gpt-6.2-sol",
+                                    "reasoning_effort": "medium"})
+            self.assertTrue(log.with_suffix(".done").exists())
+            self.assertFalse(Path((tmp / "scratch-path").read_text()).exists())
+            self.assertEqual((tmp / "handoff/pr.md").read_text(), "draft")
+            metrics = json.loads((tmp / "state/metrics/7.jsonl").read_text())
+            self.assertIn("usage limit reached; waiting", result.stderr)
+            self.assertIn("temporary API error; retrying", result.stderr)
+            self.assertEqual((metrics["resumes"], metrics["exit_code"], metrics["usage"]["input_tokens"]), (2, 0, 7))
+
+    def test_codex_worker_times_out_and_finishes_the_tab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tmp = Path(directory)
+            result = self.run_codex_worker(tmp, "os.execv('/bin/sleep', ['sleep', '20'])\n", CODEX_MAX_SECONDS="1")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            outcome, path = result.stdout.splitlines()
+            self.assertIn("error_max_time", outcome)
+            self.assertTrue(Path(path).with_suffix(".done").exists())
+            self.assertEqual(list((tmp / "state/tmp").iterdir()), [])
+
+    def test_codex_worker_uses_the_review_handoff_and_model(self):
+        for scope, effort in (("medium", "medium"), ("invalid", "high")):
+            with self.subTest(scope=scope), tempfile.TemporaryDirectory() as directory:
+                tmp = Path(directory)
+                result = self.run_codex_worker(tmp, """
+assert args[args.index("--model") + 1] == "review-model"
+assert f'model_reasoning_effort="{os.environ["PROBE_EFFORT"]}"' in args
+report = Path(os.environ["REVIEW_REPORT"])
+assert str(report) in args[-1]
+report.write_text("clean")
+emit("thread.started", thread_id="review-session")
+emit("item.completed", item={"type": "agent_message", "text": "RESULT: clean"})
+emit("turn.completed", usage={"input_tokens": 7, "cached_input_tokens": 3, "output_tokens": 2})
+""", PROBE_ROLE="review", PROBE_SCOPE=scope, PROBE_EFFORT=effort, CODEX_REVIEW_MODEL="review-model")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines()[0], "RESULT: clean", result.stderr)
+                self.assertEqual((tmp / "handoff/review-1.md").read_text(), "clean")
+                row = json.loads((tmp / "state/metrics/7.jsonl").read_text())
+                self.assertEqual((row["role"], row["model"], row["reasoning_effort"]), ("review", "review-model", effort))
 
 
     def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions, stale_head_reads=0):

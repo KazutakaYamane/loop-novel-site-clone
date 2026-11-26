@@ -3,6 +3,11 @@
 
 LOOP_AGENT=${LOOP_AGENT:-claude}
 CLAUDE_MODEL=${CLAUDE_MODEL:-claude-opus-5-5}
+# 機能 issue は実装の費用を抑え、レビューには別のモデルを使う。土台作り・計画の CODEX_MODEL とは別に選ぶ。
+CODEX_IMPLEMENTATION_MODEL=${CODEX_IMPLEMENTATION_MODEL:-gpt-6.2-sol}
+CODEX_REVIEW_MODEL=${CODEX_REVIEW_MODEL:-gpt-6.2-astra}
+# 同じ Codex セッションで実際に CLI が動ける秒数。再開しても予算は戻さない。
+CODEX_MAX_SECONDS=${CODEX_MAX_SECONDS:-1800}
 EFFORT=high
 # bootstrap の各段階と、カナリアの仕様・適用・判定に使う推論量。トークンを抑えるため計画・批評より低くする
 BOOTSTRAP_EFFORT=medium

@@ -284,6 +284,20 @@ def short(value, n=160) -> str:
 
 def render(e: dict) -> list[str]:
     kind = e.get("type")
+    if kind == "thread.started":
+        return ["▶ セッション開始 Codex"]
+    if kind == "item.started" and e["item"]["type"] == "command_execution":
+        return [f"$ Bash: {short(e['item']['command'])}"]
+    if kind == "item.completed":
+        item = e["item"]
+        if item["type"] == "agent_message":
+            return [short(item["text"], 600)]
+        if item["type"] == "file_change":
+            return [f"$ Edit: {short(item['changes'])}"]
+        if item["type"] == "command_execution" and item.get("exit_code"):
+            return [f"  ✗ {short(item.get('aggregated_output', ''))}"]
+    if kind == "turn.failed":
+        return [f"  ✗ {short(e['error']['message'])}"]
     if kind == "system" and e.get("subtype") == "init":
         return [f"▶ セッション開始 {e.get('model', '')}"]
     if kind == "assistant":
@@ -316,29 +330,41 @@ def render(e: dict) -> list[str]:
     return []
 
 
+def follow_lines(path, pos, result_only=False):
+    if not path.exists():
+        return pos
+    with path.open("rb") as f:
+        f.seek(pos)
+        chunk = f.read()
+    # 書きかけの最後の行は次に回す
+    end = chunk.rfind(b"\n") + 1
+    for line in chunk[:end].decode("utf-8", errors="replace").splitlines():
+        try:
+            e = json.loads(line)
+            if isinstance(e, dict) and (not result_only or e.get("type") == "result"):
+                for message in render(e):
+                    print(message, flush=True)
+        except (ValueError, KeyError, TypeError):
+            continue
+    return pos + end
+
+
 def cmd_follow(base, *opts):
-    part, pos, idle = 1, 0, 0
+    part, pos, result_pos = 1, 0, 0
     done = Path(f"{base}.done")
     while True:
         path = Path(f"{base}.part{part}.jsonl")
-        progressed = False
-        if path.exists():
-            with path.open("rb") as f:
-                f.seek(pos)
-                chunk = f.read()
-            # 書きかけの最後の行は次に回す
-            end = chunk.rfind(b"\n") + 1
-            for line in chunk[:end].decode("utf-8", errors="replace").splitlines():
-                try:
-                    e = json.loads(line)
-                except ValueError:
-                    continue
-                for text in render(e) if isinstance(e, dict) else []:
-                    print(text, flush=True)
-            pos += end
-            progressed = end > 0
-        if Path(f"{base}.part{part + 1}.jsonl").exists() and not progressed:
-            part, pos = part + 1, 0
+        raw = Path(f"{base}.part{part}.raw.jsonl")
+        previous = (pos, result_pos)
+        if raw.exists():
+            pos = follow_lines(raw, pos)
+            result_pos = follow_lines(path, result_pos, result_only=True)
+        else:
+            pos = follow_lines(path, pos)
+        progressed = (pos, result_pos) != previous
+        next_part = f"{base}.part{part + 1}"
+        if not progressed and any(Path(f"{next_part}{suffix}").exists() for suffix in (".jsonl", ".raw.jsonl")):
+            part, pos, result_pos = part + 1, 0, 0
             print(f"── 再開(part {part})", flush=True)
             continue
         if done.exists() and not progressed:
