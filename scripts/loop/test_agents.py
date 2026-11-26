@@ -235,5 +235,94 @@ esac
             worktrees = subprocess.run(["git", "-C", repo, "worktree", "list"], capture_output=True, text=True).stdout
             self.assertEqual(len(worktrees.splitlines()), 1, worktrees)
 
+    def land(self, tmp, main_change=None, ci="SUCCESS"):
+        """CI を通った issue のブランチをマージする段階(land_feature)を、手元の origin とスタブの gh で動かす。
+        main_change: ブランチを作った後に main に入る変更(ファイル名, 中身)。None なら main は進まない"""
+        tmp = Path(tmp)
+        g = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+        origin, seed, wt = tmp / "origin.git", tmp / "seed", tmp / "wt"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", origin], check=True)
+        subprocess.run(["git", "clone", "-q", origin, seed], check=True, capture_output=True)
+        (seed / "shared.md").write_text("base\n")
+        subprocess.run(["git", "-C", seed, *g, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", seed, *g, "commit", "-q", "-m", "base"], check=True)
+        subprocess.run(["git", "-C", seed, "push", "-q", "origin", "HEAD:main"], check=True)
+        subprocess.run(["git", "-C", seed, "worktree", "add", "-q", "-b", "7-feature", wt], check=True)
+        (wt / "feature.md").write_text("feature\n")
+        (wt / "shared.md").write_text("feature edit\n")
+        subprocess.run(["git", "-C", wt, *g, "commit", "-q", "-am", "feature", "--allow-empty"], check=True)
+        subprocess.run(["git", "-C", wt, *g, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", wt, *g, "commit", "-q", "-m", "feature files"], check=True)
+        subprocess.run(["git", "-C", wt, "push", "-q", "origin", "7-feature"], check=True)
+        if main_change:
+            other = tmp / "other"
+            subprocess.run(["git", "clone", "-q", origin, other], check=True, capture_output=True)
+            (other / main_change[0]).write_text(main_change[1])
+            subprocess.run(["git", "-C", other, *g, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", other, *g, "commit", "-q", "-m", "other issue"], check=True)
+            subprocess.run(["git", "-C", other, "push", "-q", "origin", "HEAD:main"], check=True)
+        (tmp / "gh").write_text(f"""#!/usr/bin/env python3
+import json, subprocess, sys
+args = sys.argv[1:]
+open("{tmp}/gh-calls", "a").write(" ".join(args) + "\\n")
+if args[:2] == ["pr", "view"]:
+    head = subprocess.check_output(["git", "-C", "{origin}", "rev-parse", "refs/heads/7-feature"], text=True).strip()
+    jobs = [{{"name": n, "status": "COMPLETED", "conclusion": "{ci}" if n == "e2e" else "SUCCESS",
+              "detailsUrl": "https://example.com/actions/runs/9/job/" + n}} for n in "{'backend frontend e2e mutation visual ac-coverage guard'}".split()]
+    print(json.dumps({{"headRefOid": head, "statusCheckRollup": jobs}}))
+elif args[:1] == ["api"]:
+    print("[]")
+""")
+        (tmp / "gh").chmod(0o755)
+        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
+               "POLL_SECONDS": "0"}
+        env.pop("LOOP_AGENT", None)
+        (tmp / "pr.md").write_text("Closes #7\n")
+        script = ('source "$1"; n=7 pr=https://example.com/pr/8 wt="$2" branch=7-feature handoff="$3"; '
+                  'head="$(git -C "$wt" rev-parse HEAD)"; PR_BODY="$3/pr.md" CI_HISTORY="$3/history"; touch "$CI_HISTORY"; '
+                  'REPO_ROOT="$4"; rc=0; land_feature || rc=$?; echo "rc=$rc"')
+        result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh", wt, tmp, seed],
+                                capture_output=True, text=True, env=env, timeout=120)
+        calls = (tmp / "gh-calls").read_text() if (tmp / "gh-calls").exists() else ""
+        return result, calls, origin, wt, tmp
+
+    def test_land_merges_directly_when_main_has_not_moved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls, origin, wt, tmp = self.land(tmp)
+            self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=0", result.stderr)
+            self.assertIn("pr merge https://example.com/pr/8 --squash --match-head-commit", calls)
+            self.assertFalse(wt.exists())
+
+    def test_land_merges_main_into_the_branch_and_reruns_ci_before_merging(self):
+        # strict なブランチ保護では、先に進んだ main を取り込まないとマージできない
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls, origin, wt, tmp = self.land(tmp, main_change=("other.md", "other\n"))
+            self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=0", result.stderr)
+            # マージしたのは、main の変更を取り込んで push し直したコミット(ブランチはマージ後に消える)
+            merged_head = calls.split("--match-head-commit ")[1].split()[0]
+            history = subprocess.run(["git", "-C", origin, "log", "--format=%s", merged_head],
+                                     capture_output=True, text=True).stdout
+            self.assertIn("other issue", history)
+            self.assertIn("feature files", history)
+            self.assertEqual(calls.count("pr merge"), 1)
+            self.assertIn("merged main", (tmp / "history").read_text())
+
+    def test_land_sends_a_conflict_back_to_the_implementation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls, origin, wt, tmp = self.land(tmp, main_change=("shared.md", "other edit\n"))
+            self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=2", result.stderr)
+            self.assertNotIn("pr merge", calls)
+            history = (tmp / "history").read_text()
+            self.assertIn("conflicted in: shared.md", history)
+            self.assertEqual(subprocess.run(["git", "-C", wt, "status", "--porcelain"], capture_output=True,
+                                            text=True).stdout, "")
+
+    def test_land_sends_a_ci_failure_after_merging_main_back_to_the_implementation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, calls, origin, wt, tmp = self.land(tmp, main_change=("other.md", "other\n"), ci="FAILURE")
+            self.assertEqual(result.stdout.strip().splitlines()[-1], "rc=2", result.stderr)
+            self.assertNotIn("pr merge", calls)
+            self.assertIn("e2e FAILURE", (tmp / "history").read_text())
+
 if __name__ == "__main__":
     unittest.main()

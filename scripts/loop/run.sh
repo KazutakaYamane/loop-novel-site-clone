@@ -261,10 +261,14 @@ remove_worktree() {
 
 checks_green() { gh pr checks "$1" --required >/dev/null 2>&1; }
 
+# マージしてから片付ける。マージに失敗したときは worktree を残し、取り込みのやり直しや人間の調査に使う
+# $1 PR $2 worktree $3 ブランチ、残りは gh pr merge に渡す
 merge_pr() {
-  local pr=$1 wt=$2
+  local pr=$1 wt=$2 branch=$3
+  (cd "$REPO_ROOT" && gh pr merge "$pr" --squash "${@:4}") || return 1
   remove_worktree "$wt"
-  (cd "$REPO_ROOT" && gh pr merge "$pr" --squash --delete-branch "${@:3}")
+  git -C "$REPO_ROOT" branch -D "$branch" >/dev/null 2>&1 || true
+  git -C "$REPO_ROOT" push -q origin --delete "$branch" >/dev/null 2>&1 || true
 }
 
 # カナリアの仕様を書かせ(または直させ)、検査を通ったら sha256 を issue に残して固定する。$1 issue, $2 最初の指摘
@@ -486,7 +490,7 @@ cmd_bootstrap() {
     if [ "$r" = ok ]; then
       gh pr comment "$BOOT_PR" --body "$(printf 'カナリアの判定(まとめ役):\n\n%s\n\n<details><summary>カナリアの仕様</summary>\n\n%s\n\n</details>\n' "$report" "$(cat "$SPEC")")" >/dev/null
       post_metrics "$n" "$BOOT_PR"
-      merge_pr "$BOOT_PR" "$wt"
+      merge_pr "$BOOT_PR" "$wt" "$branch"
       # カナリアの worktree は bootstrap の後は使わない
       remove_worktree "$WT_DIR/canary-apply"
       remove_worktree "$WT_DIR/canary-spec"
@@ -600,8 +604,52 @@ publish_feature() {
   gh pr comment "$pr" --body-file "$handoff/reviews.md"
 }
 
+# CI を通ったコミットを main に入れる。ブランチ保護は strict なので、main が先に進んでいると(並列で動かすと
+# 必ず起きる)そのままではマージできない。main を取り込んで push し、その commit の CI が通ってからマージする。
+# 取り込みは main の変更を足すだけでレビュー済みの差分は変わらないので、もう一度はレビューしない。
+# 0 マージした / 2 実装に戻す(理由は CI_HISTORY に書いた) / 1 escalation(理由は LAND_ERR)
+land_feature() {
+  local try rc files posted=0
+  for try in 1 2 3 4 5; do
+    git -C "$wt" fetch -q origin "$DEFAULT_BRANCH" || { LAND_ERR="could not fetch $DEFAULT_BRANCH"; return 1; }
+    if ! git -C "$wt" merge-base --is-ancestor "origin/$DEFAULT_BRANCH" HEAD; then
+      log "#$n: $DEFAULT_BRANCH moved; merging it into $branch"
+      local -a ident=()
+      # 取り込みのコミットの作者。リポジトリに設定があればそれを使う
+      git -C "$wt" config user.email >/dev/null || ident=(-c user.name=loop -c user.email=loop@localhost)
+      if ! git -C "$wt" "${ident[@]}" merge -q --no-edit "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+        files="$(git -C "$wt" diff --name-only --diff-filter=U | tr '\n' ' ')"
+        git -C "$wt" merge --abort
+        printf 'merging origin/%s into %s conflicted in: %s\nMerge origin/%s into this branch, resolve the conflicts keeping both sides, and rerun the checks.\n' \
+          "$DEFAULT_BRANCH" "$branch" "$files" "$DEFAULT_BRANCH" >>"$CI_HISTORY"
+        return 2
+      fi
+      head="$(git -C "$wt" rev-parse HEAD)"
+      git -C "$wt" push -q origin "$head:refs/heads/$branch" || { LAND_ERR="could not push $head after merging $DEFAULT_BRANCH"; return 1; }
+      echo "Update $head $pr (merged $DEFAULT_BRANCH)" >>"$CI_HISTORY"
+      set_status waiting-ci "$pr $head(main を取り込み)"
+      rc=0
+      py "$LOOP_DIR/feature_ci.py" "$pr" "$head" "$REQUIRED_CHECKS" "$POLL_SECONDS" "$FEATURE_CI_TIMEOUT_SECONDS" >"$handoff/ci" || rc=$?
+      cat "$handoff/ci" >>"$CI_HISTORY"
+      case "$rc" in
+        0) echo >>"$PR_BODY"; cat "$handoff/ci" >>"$PR_BODY"; continue ;;
+        2) echo "The checks failed after merging origin/$DEFAULT_BRANCH; fix the integration on top of the merge commit." >>"$CI_HISTORY"; return 2 ;;
+        *) LAND_ERR="could not verify CI for $head after merging $DEFAULT_BRANCH"; return 1 ;;
+      esac
+    fi
+    gh pr edit "$pr" --body-file "$PR_BODY" >/dev/null || true
+    if [ "$posted" = 0 ] && checks_green "$pr"; then post_metrics "$n" "$pr" && posted=1; fi
+    if [ "$posted" = 1 ] && merge_pr "$pr" "$wt" "$branch" --match-head-commit "$head"; then return 0; fi
+    # 確かめた後に main が進んだときもここに来る。取り込みからやり直す
+    log "#$n: could not merge $head yet; checking $DEFAULT_BRANCH again"
+    sleep "${POLL_SECONDS:-60}"
+  done
+  LAND_ERR="could not merge $pr after 5 tries to catch up with $DEFAULT_BRANCH"
+  return 1
+}
+
 run_issue() (
-  local n=$1 worker_provider=$2 branch wt handoff head pr attempt ci_status
+  local n=$1 worker_provider=$2 branch wt handoff head pr attempt ci_status land
   branch="$n-$(py "$LOOP_DIR/issues.py" slug "$n")"
   wt="$(ensure_worktree "$branch")"
   handoff="$(mktemp -d)"
@@ -641,15 +689,16 @@ run_issue() (
       cat "$handoff/ci" >>"$CI_HISTORY"
       echo >>"$PR_BODY"
       cat "$handoff/ci" >>"$PR_BODY"
-      if gh pr edit "$pr" --body-file "$PR_BODY" && checks_green "$pr" &&
-          post_metrics "$n" "$pr" && merge_pr "$pr" "$wt" --match-head-commit "$head"; then
-        gh issue edit "$n" --remove-label loop:in-progress >/dev/null || true
-        log "merged #$n: $pr"
-        set_status done "merged $pr"
-      else
-        escalate_issue "$n" "could not finalize green reviewed commit $head on $pr"
-      fi
-      return
+      land=0; land_feature || land=$?
+      case "$land" in
+        0)
+          gh issue edit "$n" --remove-label loop:in-progress >/dev/null || true
+          log "merged #$n: $pr"
+          set_status done "merged $pr"
+          return ;;
+        2) attempt=$((attempt + 1)); continue ;;
+        *) escalate_issue "$n" "could not finalize green reviewed commit on $pr: $LAND_ERR"; return ;;
+      esac
     else
       ci_status=$?
     fi
