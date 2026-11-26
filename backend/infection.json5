@@ -1,0 +1,24 @@
+// ミューテーションテストの設定(AGENTS.md の Protected paths)。
+// CI は --git-diff-lines で PR が変えた行だけを変異させる。しきい値を下げる変更は人間の承認が要る
+{
+    "$schema": "vendor/infection/infection/resources/schema.json",
+    "source": {
+        "directories": ["app"]
+    },
+    // Infection 0.35 は Pest の専用アダプタを持たない。Pest は PHPUnit の上で動くので、PHPUnit として Pest を呼ぶ(版の誤認を避ける包み)
+    "testFramework": "phpunit",
+    "phpUnit": {
+        "customPath": "tests/bin/pest-for-infection.php"
+    },
+    "timeout": 30,
+    "logs": {
+        "text": "storage/infection/infection.log",
+        "summary": "storage/infection/summary.log",
+        "github": true
+    },
+    "mutators": {
+        "@default": true
+    },
+    "minMsi": 80,
+    "minCoveredMsi": 90
+}

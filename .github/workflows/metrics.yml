@@ -1,0 +1,49 @@
+# PR がマージされたら、その PR の metrics を metrics ブランチの metrics/metrics.jsonl に 1 行追記する。
+# 読み方は docs/harness/README.md の「記録」にある。
+name: Metrics
+
+on:
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: metrics
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+  actions: read
+
+jobs:
+  append:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the metrics line
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 .github/scripts/metrics.py --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --workflow CI > "$RUNNER_TEMP/line.json"
+          cat "$RUNNER_TEMP/line.json"
+      - name: Append to metrics/metrics.jsonl on the metrics branch
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin metrics >/dev/null; then
+            git fetch --no-tags --depth=1 origin metrics
+            git switch -c metrics FETCH_HEAD
+          else
+            git switch --orphan metrics
+          fi
+          mkdir -p metrics
+          cat "$RUNNER_TEMP/line.json" >> metrics/metrics.jsonl
+          git add metrics/metrics.jsonl
+          git commit -m "metrics: PR #$PR_NUMBER"
+          git push origin metrics

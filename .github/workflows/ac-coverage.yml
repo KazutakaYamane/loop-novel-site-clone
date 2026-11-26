@@ -1,0 +1,74 @@
+# 必須チェック ac-coverage。PR の本文の `AC:` 行の ID ごとに、タグ付きのテストがあるかを確かめる。
+# 本文を直したときにも走らせるため、CI(ci.yml)とは別のワークフローにしている。
+name: AC coverage
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ac-coverage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+env:
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+
+jobs:
+  ac-coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: none
+          tools: composer:v2
+      - name: Install dependencies
+        run: |
+          (cd e2e && npm ci --no-audit --no-fund)
+          (cd frontend && npm ci --no-audit --no-fund)
+          (cd backend && composer install --no-interaction --prefer-dist --no-progress)
+      # テストの一覧は各ツールに出させる(コメントの中の ID や、スイートに入らないファイルは数えない)
+      - name: List the tests of each suite
+        run: |
+          (cd e2e && npx playwright test --list --reporter=json) > "$RUNNER_TEMP/playwright.json"
+          (cd frontend && npx vitest list --json="$RUNNER_TEMP/vitest.json")
+          (cd backend && vendor/bin/pest --list-groups --colors=never) > "$RUNNER_TEMP/pest-groups.txt"
+      - name: Read the PR description and the issue it closes
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-body.md"
+          issue="$(grep -ioE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' "$RUNNER_TEMP/pr-body.md" | head -n 1 | grep -oE '[0-9]+$' || true)"
+          if [ -n "$issue" ]; then
+            gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/issue-body.md"
+            echo "ISSUE_ARGS=--issue-body-file=$RUNNER_TEMP/issue-body.md" >> "$GITHUB_ENV"
+          fi
+      - name: Every acceptance criterion on the AC line has a tagged test
+        run: >-
+          python3 "$RUNNER_TEMP/ci/ac_coverage.py"
+          --pr-body-file "$RUNNER_TEMP/pr-body.md" $ISSUE_ARGS
+          --requirements docs/requirements.md
+          --playwright-json "$RUNNER_TEMP/playwright.json"
+          --vitest-json "$RUNNER_TEMP/vitest.json"
+          --pest-groups "$RUNNER_TEMP/pest-groups.txt"

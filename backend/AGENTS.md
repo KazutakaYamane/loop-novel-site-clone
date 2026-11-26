@@ -1,0 +1,16 @@
+# backend/AGENTS.md
+
+`backend/`(Laravel の API)のコードの規則。ルートの `AGENTS.md` に加えて守る。既存の規則の変更と削除には人間の承認が要る。新しい規則は末尾に足す。
+
+## 動かし方
+
+- コマンドはすべて `app` コンテナの中で動かす(ホストに PHP は無い): `docker compose exec app vendor/bin/pest`、`vendor/bin/phpstan analyse`、`vendor/bin/pint`。
+- テストはテスト専用の DB(`novel_submission_site_test`)で動く(docs/adr/0002)。開発用の DB をテストで使わない。
+
+## 規則
+
+- `app/` のすべての PHP ファイルは `declare(strict_types=1);` で始める(`arch()` テストが確かめる)。
+- 環境変数は `config/` の中でだけ `env()` で読み、アプリのコードは `config()` を使う(`arch()` テストが確かめる)。
+- テストは Pest の関数形式で書く。DB を使うテストは `tests/Feature/`、使わないものは `tests/Unit/`、構造の規則は `tests/Arch/` に置く。
+- 受け入れ条件を backend のテストで確かめるときは、`->group('AC-F<n>-<m>')` を付ける(docs/adr/0005)。
+- PHPStan はレベル max。型が合わないときは、コードか型の注釈(`@var`、`@param`、ジェネリクス)を正しく直す。

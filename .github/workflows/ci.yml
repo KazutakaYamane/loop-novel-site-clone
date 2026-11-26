@@ -1,0 +1,244 @@
+# 必須チェック(scripts/loop/config の REQUIRED_CHECKS)。ジョブ名は REQUIRED_CHECKS と同じにする。
+# ac-coverage は PR の本文の編集でも走らせるため ac-coverage.yml に分けている。
+# 各ジョブが何を防ぐかは docs/harness/README.md の「CI のジョブ」にある。
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BASE_REF: ${{ github.event.pull_request.base.ref }}
+  PHP_VERSION: "8.5"
+  NODE_VERSION: "26"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: novel_submission_site_test
+          MYSQL_USER: novel_submission_site
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s --health-timeout=3s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USERNAME: novel_submission_site
+      DB_PASSWORD: password
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: none
+          tools: composer:v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Pest (Arch, Unit, Feature)
+        run: vendor/bin/pest
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G --error-format=github
+      - name: Pint
+        run: vendor/bin/pint --test
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Vitest
+        run: npx vitest run
+      - name: ESLint
+        run: npx eslint . --max-warnings=0
+      - name: Type check
+        run: npx next typegen && npx tsc --noEmit
+      - name: Build
+        run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Start the app with Docker Compose
+        run: scripts/worktree-setup.sh
+      - name: Type check the E2E tests
+        run: docker compose run --rm --no-deps -T e2e npx tsc --noEmit
+      - name: Playwright
+        run: docker compose run --rm --no-deps -T e2e npx playwright test --project=dev
+      - name: Upload videos and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-e2e
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: ignore
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --tail 200
+
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - name: UI changes come with a visual baseline
+        run: python3 "$RUNNER_TEMP/ci/changed_code.py" ui-check --base "origin/$BASE_REF"
+      - name: Start the app with Docker Compose
+        run: scripts/worktree-setup.sh
+      - name: Playwright visual regression against the committed baselines
+        run: docker compose run --rm --no-deps -T e2e npx playwright test --project=visual-pc --project=visual-sp
+      - name: Upload diffs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-visual
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          if-no-files-found: ignore
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: novel_submission_site_test
+          MYSQL_USER: novel_submission_site
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s --health-timeout=3s --health-retries=30
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USERNAME: novel_submission_site
+      DB_PASSWORD: password
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, intl, zip, bcmath, pcntl
+          coverage: pcov
+          tools: composer:v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --prefer-dist --no-progress
+        working-directory: backend
+      # PR が追加・変更した行だけを変異させる。テストの無いコード(--with-uncovered)も数え、
+      # しきい値(infection.json5 の minMsi・minCoveredMsi)を下回れば失敗する
+      - name: Infection on the changed lines
+        working-directory: backend
+        run: >-
+          vendor/bin/infection
+          --git-diff-lines --git-diff-base="origin/$BASE_REF"
+          --with-uncovered --ignore-msi-with-no-mutations
+          --threads=max --no-progress --logger-github --show-mutations
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - name: Changed frontend lines
+        id: targets
+        run: |
+          python3 "$RUNNER_TEMP/ci/changed_code.py" stryker-mutate --base "origin/$BASE_REF" > "$RUNNER_TEMP/mutate.txt"
+          cat "$RUNNER_TEMP/mutate.txt"
+          echo "mutate=$(paste -sd, "$RUNNER_TEMP/mutate.txt")" >> "$GITHUB_OUTPUT"
+      # 前回までの結果(incrementalFile)を使い回し、変わったコードとテストだけを試す
+      - uses: actions/cache@v4
+        with:
+          path: frontend/reports/stryker-incremental.json
+          key: stryker-incremental-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-${{ github.event.pull_request.number }}-
+            stryker-incremental-
+      # しきい値は stryker.config.mjs の thresholds.break
+      - name: Stryker (incremental) on the changed lines
+        if: steps.targets.outputs.mutate != ''
+        working-directory: frontend
+        env:
+          MUTATE: ${{ steps.targets.outputs.mutate }}
+        run: npx stryker run --incremental --mutate "$MUTATE"
+      - name: No frontend production code changed
+        if: steps.targets.outputs.mutate == ''
+        run: echo "Stryker: no changed frontend production code to mutate"
+      - name: Upload mutation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-reports
+          path: |
+            backend/storage/infection/
+            frontend/reports/mutation/
+          if-no-files-found: ignore
+
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin "$BASE_REF"
+      - name: Use the CI scripts of the base branch
+        run: .github/ci-scripts.sh
+      - name: Self-test of the CI scripts
+        run: python3 -m unittest discover -s "$RUNNER_TEMP/ci/tests" -p "test_*.py"
+      - name: Forbidden shortcuts, protected paths and dependencies
+        run: python3 "$RUNNER_TEMP/ci/guard.py" --base "origin/$BASE_REF"

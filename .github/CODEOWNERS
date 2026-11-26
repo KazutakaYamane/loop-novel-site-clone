@@ -1,0 +1,56 @@
+# 保護されたパス(AGENTS.md の Protected paths)。ここに当たるファイルを変える PR は、人間の承認が要る。
+# CODEOWNERS は「既存のファイルだけ」を表せないので、既存のテストと ADR は bootstrap の時点のファイルを 1 つずつ書く
+# (フォルダ全体を書くと、テストを足すだけの PR まで承認が要る)。その後に足されたファイルの変更は CI の guard が止める
+# (docs/adr/0004-ci-jobs-and-guard.md)。追記を認める backend/AGENTS.md、frontend/AGENTS.md、docs/adr/README.md は書かない。
+
+# ハーネスと規則
+/.github/ @KazutakaYamane
+/.claude/ @KazutakaYamane
+/scripts/loop/ @KazutakaYamane
+/AGENTS.md @KazutakaYamane
+/CLAUDE.md @KazutakaYamane
+/docs/requirements.md @KazutakaYamane
+/docs/kakuyomu-reference.md @KazutakaYamane
+/.gitignore @KazutakaYamane
+/metrics/ @KazutakaYamane
+
+# 検査の設定(静的解析、ESLint、型、ミューテーション、カバレッジ、見た目の比較)
+/backend/phpstan.neon @KazutakaYamane
+/backend/phpstan*.neon @KazutakaYamane
+/backend/*baseline* @KazutakaYamane
+**/eslint.config.* @KazutakaYamane
+**/.eslintrc* @KazutakaYamane
+**/tsconfig*.json @KazutakaYamane
+/backend/infection.json5 @KazutakaYamane
+/frontend/stryker.config.* @KazutakaYamane
+/backend/phpunit.xml @KazutakaYamane
+/backend/pint.json @KazutakaYamane
+/frontend/vitest.config.* @KazutakaYamane
+/frontend/vitest.setup.* @KazutakaYamane
+/e2e/playwright.config.* @KazutakaYamane
+
+# 既存のテスト(bootstrap の時点)
+/backend/tests/Arch/ArchTest.php @KazutakaYamane
+/backend/tests/Feature/DatabaseTest.php @KazutakaYamane
+/backend/tests/Feature/HealthCheckTest.php @KazutakaYamane
+/backend/tests/Pest.php @KazutakaYamane
+/backend/tests/TestCase.php @KazutakaYamane
+/backend/tests/Unit/UserTest.php @KazutakaYamane
+/backend/tests/bin/pest-for-infection.php @KazutakaYamane
+/frontend/app/page.test.tsx @KazutakaYamane
+/e2e/.gitignore @KazutakaYamane
+/e2e/package.json @KazutakaYamane
+/e2e/package-lock.json @KazutakaYamane
+/e2e/tsconfig.json @KazutakaYamane
+/e2e/tests/skeleton.spec.ts @KazutakaYamane
+/e2e/visual/top.visual.spec.ts @KazutakaYamane
+/e2e/visual/__screenshots__/top.visual.spec.ts/top-visual-pc.png @KazutakaYamane
+/e2e/visual/__screenshots__/top.visual.spec.ts/top-visual-sp.png @KazutakaYamane
+
+# 既存の ADR(bootstrap の時点)
+/docs/adr/0001-worktree-isolation.md @KazutakaYamane
+/docs/adr/0002-backend-mysql-and-test-database.md @KazutakaYamane
+/docs/adr/0003-test-and-check-tooling.md @KazutakaYamane
+/docs/adr/0004-ci-jobs-and-guard.md @KazutakaYamane
+/docs/adr/0005-acceptance-criteria-tags.md @KazutakaYamane
+/docs/adr/0006-merge-metrics.md @KazutakaYamane
