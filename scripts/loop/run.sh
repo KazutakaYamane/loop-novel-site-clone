@@ -278,13 +278,36 @@ PY
   fi
 }
 
+# bootstrap PR の head が手元の HEAD と同じか確かめ、その commit の必須ジョブを待つ。CI 待ちはエージェントにさせない
+# (重い文脈のまま待つとターンごとに読み直しの費用がかかるため)。BOOT_HEAD に commit、BOOT_CI に結果を入れる
+# 0 green / 2 落ちたジョブがある / 3 push が PR に届いていない / それ以外は確かめられなかった
+wait_boot_ci() {
+  local pr_head rc=0
+  BOOT_HEAD="$(git -C "$WORKTREE" rev-parse HEAD)" || return 1
+  pr_head="$(gh pr view "$BOOT_PR" --json headRefOid --jq .headRefOid)" || return 1
+  if [ "$BOOT_HEAD" != "$pr_head" ]; then
+    BOOT_CI="The local HEAD $BOOT_HEAD is not the head of $BOOT_PR ($pr_head). Commit and push your work to the PR branch."
+    return 3
+  fi
+  log "waiting for required checks on $BOOT_PR ($BOOT_HEAD)"
+  BOOT_CI="$(py "$LOOP_DIR/feature_ci.py" "$BOOT_PR" "$BOOT_HEAD" "$REQUIRED_CHECKS" "$POLL_SECONDS" "$FEATURE_CI_TIMEOUT_SECONDS" 2>&1)" || rc=$?
+  return "$rc"
+}
+
+# 落ちた CI を、次のセッションに渡す指摘にする。履歴は AGENTS.md の停止条件(同じ失敗が続く)を判断する材料
+boot_ci_feedback() {
+  printf '\n\nThe required checks failed on your last push (%s):\n%s\n\nCI history of this bootstrap (oldest first):\n%s\n' \
+    "$BOOT_HEAD" "$BOOT_CI" "$(tail -n 80 "$BOOT_CI_HISTORY")"
+}
+
 # bootstrap の1段階を1セッションで行う。$1 番号 $2 段階名 $3 プロンプトの段階ファイル $4 期待する結果(done|green)
+# green の段階はエージェントが push して終わり、まとめ役が CI を待つ。落ちたら指摘を付けて新しいセッションで直させる
 # 成功で 0。green のときは BOOT_PR に PR の URL を入れる
 bootstrap_stage() {
-  local n=$1 stage=$2 file=$3 want=$4 voids=0 report r
+  local n=$1 stage=$2 file=$3 want=$4 voids=0 report r ci_note="" attempt=0 last_head="" ci
   export STAGE="$stage"
   while :; do
-    export FEEDBACK="${STAGE_FEEDBACK:-}"
+    export FEEDBACK="${STAGE_FEEDBACK:-}$ci_note"
     STAGE_TASK="$(render_prompt "$LOOP_DIR/prompts/bootstrap/$file.md")"; export STAGE_TASK
     EFFORT="$BOOTSTRAP_EFFORT" run_agent bootstrap.md "$WORKTREE" "bootstrap-$stage-r$ROUND" "$MAX_COST_USD_BOOTSTRAP_STAGE" bootstrap
     record_metrics "$n" "$LAST_LOG" "bootstrap-$stage-r$ROUND"
@@ -297,10 +320,26 @@ bootstrap_stage() {
     r="$(result_of "$LAST_LOG")"
     case "$want:$r" in
       "done:RESULT: done"*) return 0 ;;
-      "green:RESULT: green "*)
-        BOOT_PR="${r#RESULT: green }"
-        checks_green "$BOOT_PR" && return 0
-        STAGE_FEEDBACK="The previous session claimed green, but the required checks on $BOOT_PR are not green. Fix them."
+      "green:RESULT: pushed "*)
+        BOOT_PR="${r#RESULT: pushed }"
+        attempt=$((attempt + 1))
+        ci=0; wait_boot_ci || ci=$?
+        case "$ci" in
+          0) return 0 ;;
+          2)
+            if [ "$BOOT_HEAD" = "$last_head" ]; then
+              escalate_issue "$n" "bootstrap stage $stage (round $ROUND) pushed nothing new after CI failed on $BOOT_HEAD"; return 1
+            fi
+            last_head=$BOOT_HEAD
+            printf 'Attempt %s %s %s\n%s\n' "$stage-r$ROUND-a$attempt" "$BOOT_HEAD" "$BOOT_PR" "$BOOT_CI" >>"$BOOT_CI_HISTORY"
+            log "required checks failed on $BOOT_HEAD (stage $stage, attempt $attempt)"
+            ci_note="$(boot_ci_feedback)" ;;
+          3) ci_note="$(printf '\n\n%s\n' "$BOOT_CI")" ;;
+          *) escalate_issue "$n" "could not verify CI on $BOOT_PR ($BOOT_HEAD): $BOOT_CI"; return 1 ;;
+        esac
+        if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+          escalate_issue "$n" "bootstrap stage $stage (round $ROUND) reached the attempt limit ($MAX_ATTEMPTS)"; return 1
+        fi
         continue ;;
       *) escalate_issue "$n" "bootstrap stage $stage (round $ROUND) ended with: $r (log: $(basename "$LAST_LOG"))"; return 1 ;;
     esac
@@ -309,7 +348,7 @@ bootstrap_stage() {
 
 cmd_bootstrap() {
   git -C "$REPO_ROOT" fetch -q origin
-  local n branch wt cwt r report rd stage area last start=1 done_file="$STATE_DIR/bootstrap-stages.done"
+  local n branch wt cwt r report rd stage area last ci start=1 done_file="$STATE_DIR/bootstrap-stages.done"
   local LOOP_PHASE=bootstrap
   n="$(gh issue list --label loop:bootstrap --state open --json number --jq '.[0].number // empty')"
   if [ -z "$n" ]; then log "no open loop:bootstrap issue; skipping bootstrap"; return 0; fi
@@ -323,6 +362,8 @@ cmd_bootstrap() {
 
   wt="$(ensure_worktree "$branch")"
   export ISSUE=$n BRANCH=$branch WORKTREE=$wt MAX_ROUNDS=$MAX_BOOTSTRAP_ROUNDS STAGE_FEEDBACK="" FIX_AREA=""
+  BOOT_CI_HISTORY="$STATE_DIR/bootstrap-ci-history"
+  touch "$BOOT_CI_HISTORY"
   touch "$done_file"
   BOOT_PR="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
 
@@ -366,9 +407,24 @@ cmd_bootstrap() {
       done
       [ -n "$BOOT_PR" ] || BOOT_PR="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
     fi
-    if [ -z "$BOOT_PR" ] || ! checks_green "$BOOT_PR"; then
-      STAGE_FEEDBACK="The required checks on the bootstrap PR are not green (or no PR is open). Fix them."
+    # 中断後の再開では CI がまだ走っていることがある。終わるまで待ち、落ちていたときだけ直させる
+    if [ -z "$BOOT_PR" ]; then
+      STAGE_FEEDBACK="No bootstrap PR is open for this branch. Open it."
       bootstrap_stage "$n" finish finish green || return 1
+    else
+      ci=0; wait_boot_ci || ci=$?
+      case "$ci" in
+        0) ;;
+        2|3)
+          if [ "$ci" = 2 ]; then
+            printf 'Attempt %s %s %s\n%s\n' "check-r$round" "$BOOT_HEAD" "$BOOT_PR" "$BOOT_CI" >>"$BOOT_CI_HISTORY"
+            STAGE_FEEDBACK="$(boot_ci_feedback)"
+          else
+            STAGE_FEEDBACK="$BOOT_CI"
+          fi
+          bootstrap_stage "$n" finish finish green || return 1 ;;
+        *) escalate_issue "$n" "could not verify CI on $BOOT_PR: $BOOT_CI"; return 1 ;;
+      esac
     fi
 
     # 土台作り役とは別のエージェントが、固定した仕様どおりにカナリア PR を出す

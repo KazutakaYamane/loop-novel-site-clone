@@ -4,9 +4,9 @@ Issue: #${ISSUE}  Branch: ${BRANCH}  Worktree: ${WORKTREE}  Round: ${ROUND} of $
 Required CI job names (REQUIRED_CHECKS): ${REQUIRED_CHECKS}
 CODEOWNERS owner: @${CODEOWNER}
 
-For local test/lint/build commands (including the Red step) and CI check watches, prefix the command with "${LOOP_DIR}/check-output.sh", for example `"${LOOP_DIR}/check-output.sh" gh pr checks --watch`. Keep the PR and required-check flags specified below. The wrapper preserves the exit status and prints the full log path. If the excerpt is insufficient, search that file for the failing test or job and read only the relevant lines. For GitHub Actions diagnostics, capture `gh run view --job <job-id> --log-failed` through the same wrapper and search its saved log even when retrieval exits zero. Apply this to your own shell invocations only; keep the CI jobs' logs available in full.
+For local test/lint/build commands (including the Red step), prefix the command with "${LOOP_DIR}/check-output.sh", for example `"${LOOP_DIR}/check-output.sh" <test command>`. Never wait for or watch CI checks yourself (`gh pr checks --watch`, polling loops, sleeps); the orchestrator waits for CI. The wrapper preserves the exit status and prints the full log path. If the excerpt is insufficient, search that file for the failing test or job and read only the relevant lines. For GitHub Actions diagnostics, capture `gh run view --job <job-id> --log-failed` through the same wrapper and search its saved log even when retrieval exits zero. Apply this to your own shell invocations only; keep the CI jobs' logs available in full.
 
-Feedback from the previous round (empty on the first round):
+Feedback from the orchestrator (canary results, or the CI failures of the previous push; empty if none):
 ${FEEDBACK}
 
 Read AGENTS.md, docs/requirements.md, docs/kakuyomu-reference.md, scripts/loop/config, and scripts/loop/dependencies.md before you start. The files under scripts/loop/ are fixed; never edit them.
@@ -39,5 +39,5 @@ After you finish, a separate agent tests your CI with canaries: pull requests th
 
 Then:
 
-7. Commit, push, and open the bootstrap PR against `main` with `Closes #${ISSUE}` and an empty `AC:` line. Wait with `gh pr checks --watch` until its checks are green. Fix the causes of any failures.
+7. Commit, push, and open the bootstrap PR against `main` with `Closes #${ISSUE}` and an empty `AC:` line. Do not wait for its checks: the orchestrator waits for the required checks on the commit you pushed, and when any fail it starts a new session with the failures in the feedback.
 

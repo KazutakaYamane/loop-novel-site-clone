@@ -95,7 +95,9 @@ Codex の各回の生ログは `*.partN.raw.jsonl`、共通の判定・監査用
 | `tooling` | テストの道具と、worktree ごとの環境を作るスクリプト |
 | `ci-checks` | CI のジョブ `backend` `frontend` `e2e` `mutation` `visual` |
 | `ci-guard` | CI のジョブ `ac-coverage` `guard`(ずるの検出、保護パス、依存の許可リスト) |
-| `finish` | metrics のワークフロー、PR のひな形、CODEOWNERS、文書。PR を開いて CI が緑になるまで直す |
+| `finish` | metrics のワークフロー、PR のひな形、CODEOWNERS、文書。PR を開く |
+
+`finish` と `fix-*` のエージェントは push して PR を開いたら、CI を待たずに終わる。CI の結果はまとめ役が待つ。必須のジョブが落ちたら、落ちたジョブと、この土台作りでの CI の履歴(`../loop-novel-site-clone.loop/bootstrap-ci-history`)を添えて、新しいセッションで直させる。履歴のたまった重い会話のまま CI を待つと、待つだけのターンでも毎回その会話を読み直す費用がかかるので、待つ役をまとめ役に移した。直したはずのセッションが何も push しなかったときと、1つの段階で `MAX_ATTEMPTS` 回 push しても緑にならないときは、人間の判断待ちにする。
 
 段階を積み終えたらカナリアで確かめる。不合格のときは、不合格のケースを担当ごとに分け(`fix-checks` と `fix-guard`)、担当ごとに別のセッションで直してから、もう一度カナリアで確かめる。
 
@@ -290,7 +292,7 @@ Codex の実行にはログイン済みの Codex CLI と、worktree で Docker�
 
 Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番号>.jsonl` に追記する。UTC の開始・終了時刻と実経過ミリ秒（そのセッション内のツール待ちを含む。PR 作成後にまとめ役が CI を待つ時間は別）、役割、終了コードを記録する。トークン数は CLI の `turn.completed.usage` に基づく。`input_tokens` は `cached_input_tokens` を含むため、総量は入力と `output_tokens` の和。利用量が届かなければ null、異常終了や一部欠落は `usage_complete: false` になる。再実行は別セッションとして追記し、過去のログは再集計しない。マージ前には Claude と同じ経路で PR に転記する。
 
-土台作り・実装・レビューの担当は、テストや CI の監視を `scripts/loop/check-output.sh` 経由で実行する。会話には終了コードとログのパスを1行で返し、失敗時にはエラー周辺（見つからなければ末尾）を添える。標準出力と標準エラーの全文は実行ごとに一時ディレクトリの別ファイルに残る。
+土台作り・実装・レビューの担当は、テストや CI のログの取得を `scripts/loop/check-output.sh` 経由で実行する。CI の完了はどの担当も待たず、まとめ役が待つ。会話には終了コードとログのパスを1行で返し、失敗時にはエラー周辺（見つからなければ末尾）を添える。標準出力と標準エラーの全文は実行ごとに一時ディレクトリの別ファイルに残る。
 
 - エージェントの1回ごとの実行記録は `../loop-novel-site-clone.loop/logs/` に残る。再開した場合も、1つのファイルにつなげて残す。
 - 計画・批評・分け直しの各実行は issue に属さないので、`<STATE_DIR>/metrics/plan.jsonl` に1行ずつ記録する。`run` は `plan-r<回>`、`plan-critic-r<回>`、`replan-r<回>`、`replan-critic-r<回>`。PR には転記されないので、集計するときはこのファイルも読む。

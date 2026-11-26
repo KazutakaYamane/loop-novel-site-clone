@@ -125,5 +125,64 @@ class AgentContracts(unittest.TestCase):
             self.assertEqual((metrics["agent"], metrics["api_equivalent_cost_usd"]), ("claude", 1.25))
 
 
+    def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions):
+        """スタブの claude と gh で bootstrap の green 段階を動かす。CI はセッション番号が fail_sessions に入る間だけ落ちる"""
+        tmp = Path(tmp)
+        wt = tmp / "wt"
+        subprocess.run(["git", "init", "-q", wt], check=True)
+        git = ["git", "-C", str(wt), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        (tmp / "claude").write_text("#!/bin/sh\n" + f"""
+            n=$(( $(cat "{tmp}/sessions" 2>/dev/null || echo 0) + 1 )); echo $n >"{tmp}/sessions"
+            for a in "$@"; do last=$a; done
+            printf '%s' "$last" >"{tmp}/prompt-$n"
+            {"git -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m s$n" if commit_each_session else ":"}
+            echo '{{"type":"result","result":"RESULT: pushed https://example.com/pr/2","total_cost_usd":0.1}}'
+            """)
+        (tmp / "gh").write_text(f"""#!/usr/bin/env python3
+import json, subprocess, sys
+args = sys.argv[1:]
+open("{tmp}/gh-calls", "a").write(" ".join(args) + "\\n")
+head = subprocess.check_output(["git", "-C", "{wt}", "rev-parse", "HEAD"], text=True).strip()
+session = int(open("{tmp}/sessions").read())
+if args[:2] == ["pr", "view"] and "headRefOid,statusCheckRollup" in args:
+    conclusion = "FAILURE" if session in {sorted(fail_sessions)!r} else "SUCCESS"
+    jobs = [{{"name": n, "status": "COMPLETED", "conclusion": conclusion if n == "guard" else "SUCCESS",
+              "detailsUrl": "https://example.com/actions/runs/7/job/" + n}} for n in "{'backend frontend e2e mutation visual ac-coverage guard'}".split()]
+    print(json.dumps({{"headRefOid": head, "statusCheckRollup": jobs}}))
+elif args[:2] == ["pr", "view"]:
+    print(head)
+elif args[:1] == ["api"]:
+    print("[]")
+""")
+        for f in ("claude", "gh"):
+            (tmp / f).chmod(0o755)
+        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"]}
+        env.pop("LOOP_AGENT", None)
+        script = ('source "$1"; export WORKTREE="$2" ROUND=1 MAX_ROUNDS=4 BOOT_CI_HISTORY="$3/history"; touch "$BOOT_CI_HISTORY"; '
+                  'rc=0; bootstrap_stage 1 finish finish green || rc=$?; echo "rc=$rc pr=$BOOT_PR"')
+        result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh", wt, tmp],
+                                capture_output=True, text=True, env=env, timeout=60)
+        return result, tmp
+
+    def test_bootstrap_stage_waits_for_ci_and_reports_failures_to_a_new_session(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, tmp = self.run_bootstrap_stage(tmp, commit_each_session=True, fail_sessions={1})
+            self.assertEqual(result.stdout.strip(), "rc=0 pr=https://example.com/pr/2", result.stderr)
+            self.assertEqual((tmp / "sessions").read_text().strip(), "2")
+            self.assertNotIn("--resume", (tmp / "prompt-2").read_text())
+            second = (tmp / "prompt-2").read_text()
+            self.assertIn("The required checks failed on your last push", second)
+            self.assertIn("guard FAILURE https://example.com/actions/runs/7/job/guard", second)
+            self.assertNotIn("required checks failed", (tmp / "prompt-1").read_text())
+
+    def test_bootstrap_stage_escalates_when_a_session_pushes_nothing_after_a_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, tmp = self.run_bootstrap_stage(tmp, commit_each_session=False, fail_sessions={1, 2, 3})
+            self.assertEqual(result.stdout.strip(), "rc=1 pr=https://example.com/pr/2", result.stderr)
+            self.assertEqual((tmp / "sessions").read_text().strip(), "2")
+            self.assertIn("issue edit 1 --add-label loop:escalated", (tmp / "gh-calls").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
