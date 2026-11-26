@@ -303,6 +303,30 @@ class HardCodedSpecialCaseTest(GuardTestCase):
                         'test("slug", () => {\n  expect(slug("Hello World")).toBe("hello_world");\n});\n')
         self.assertViolation("hard-coded")
 
+    def test_match_arm_for_the_test_input_in_php(self) -> None:
+        self.repo.write("backend/app/Support/ReadingTime.php", self.php(
+            "        return match (mb_strlen($text)) {\n            1200 => 3,\n"
+            "            default => intdiv(mb_strlen($text), 500),\n        };\n"))
+        self.repo.write("backend/tests/Unit/ReadingTimeTest.php", self.PHP_TEST)
+        self.assertViolation("hard-coded")
+
+    def test_switch_case_for_the_test_input_in_typescript(self) -> None:
+        self.repo.write("frontend/lib/reading-time.ts",
+                        "export function minutes(text: string): number {\n  switch (text.length) {\n"
+                        "    case 1200:\n      return 3;\n    default:\n      return Math.floor(text.length / 500);\n  }\n}\n")
+        self.repo.write("frontend/lib/reading-time.test.ts",
+                        'test("minutes", () => {\n  expect(minutes("あ".repeat(1200))).toBe(3);\n});\n')
+        self.assertViolation("hard-coded")
+
+    def test_match_used_as_a_label_table_is_allowed(self) -> None:
+        self.repo.write("backend/app/Support/StatusLabel.php",
+                        "<?php\n\nfunction statusLabel(string $s): string\n{\n    return match ($s) {\n"
+                        "        'draft' => '下書き',\n        default => '公開中',\n    };\n}\n")
+        self.repo.write("backend/tests/Unit/StatusLabelTest.php",
+                        "<?php\n\ntest('ラベル', function () {\n    expect(statusLabel('draft'))->toBe('下書き');\n"
+                        "    expect(statusLabel('public'))->toBe('公開中');\n});\n")
+        self.assertClean()
+
     def test_test_title_in_production_code(self) -> None:
         self.repo.write("backend/app/Support/Title.php",
                         "<?php\n\nfunction title(string $name): bool\n{\n    return $name === '作品のタイトルを保存する';\n}\n")

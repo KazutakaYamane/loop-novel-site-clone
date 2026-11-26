@@ -245,6 +245,10 @@ RETURN = re.compile(r"(?<![\w$])return\b([^;\n]*)")
 TERNARY_ELSE = re.compile(rf"\s*\)?\s*\?(?![.?>-])\s*({_LIT})\s*:\s*([^;\n]+)")
 TEST_TITLE = re.compile(rf"(?<![\w$>])(?:test|it|describe|context)\s*(?:\.\s*\w+\s*)*\(\s*({_STR})")
 TRIVIAL = {"n:0", "n:1", "n:-1", "s:"}
+MATCH_START = re.compile(r"(?<![\w$>:])match\s*\(")
+MATCH_ARM = re.compile(rf"(?:^|[{{,])\s*((?:{_LIT}\s*,\s*)*{_LIT})\s*=>\s*({_LIT})\s*(?=,|$)")
+MATCH_DEFAULT = re.compile(r"(?:^|[{,])\s*default\s*=>\s*(.+?)\s*,?\s*$", re.S)
+SWITCH_CASE = re.compile(rf"(?<![\w$])case\s+({_LIT})\s*:\s*(?:\{{\s*)?return\s+({_LIT})\s*;")
 
 
 def literal_key(token: str) -> str:
@@ -261,8 +265,8 @@ def is_literal_expr(expr: str) -> bool:
     return FULL_LITERAL.fullmatch(expr) is not None
 
 
-def closing_paren(text: str, start: int) -> int:
-    """text[start] の '(' に対応する ')' の位置。文字列の中の括弧は数えない。"""
+def closing_paren(text: str, start: int, pair: str = "()") -> int:
+    """text[start] の開き括弧(pair[0])に対応する閉じ括弧の位置。文字列の中の括弧は数えない。"""
     depth, quote, i = 0, None, start
     while i < len(text):
         c = text[i]
@@ -273,9 +277,9 @@ def closing_paren(text: str, start: int) -> int:
                 quote = None
         elif c in "'\"`":
             quote = c
-        elif c == "(":
+        elif c == pair[0]:
             depth += 1
-        elif c == ")":
+        elif c == pair[1]:
             depth -= 1
             if depth == 0:
                 return i
@@ -332,6 +336,28 @@ def special_cases(text: str, test_literals: set[str]) -> list[tuple[int, str]]:
         else_expr = t.group(2).strip().rstrip(";)").strip()
         if known(x) and known(t.group(1)) and else_expr and not is_literal_expr(else_expr):
             found.append((line_of(text, eq.start()), f"{x} ? {t.group(1)} : ..."))
+
+    # PHP の match: テストの入力の腕がテストの期待値を返し、default が一般の計算をする
+    for m in MATCH_START.finditer(text):
+        close_at = closing_paren(text, m.end() - 1)
+        open_brace = text.find("{", close_at)
+        if close_at < 0 or open_brace < 0 or text[close_at + 1:open_brace].strip():
+            continue
+        end = closing_paren(text, open_brace, "{}")
+        if end < 0:
+            continue
+        body = text[open_brace + 1:end]
+        default = MATCH_DEFAULT.search(body)
+        if not default or is_literal_expr(default.group(1)):
+            continue
+        for arm in MATCH_ARM.finditer(body):
+            if known(arm.group(2)) and any(known(x) for x in LITERAL.findall(arm.group(1))):
+                found.append((line_of(text, open_brace + 1 + arm.start(1)), f"match arm {arm.group(1)} => {arm.group(2)}"))
+
+    # switch: テストの入力の case がテストの期待値を返し、その後に一般の計算を返す
+    for m in SWITCH_CASE.finditer(text):
+        if known(m.group(1)) and known(m.group(2)) and general_return_follows(text, m.end()):
+            found.append((line_of(text, m.start()), f"case {m.group(1)}: return {m.group(2)}"))
     return found
 
 
