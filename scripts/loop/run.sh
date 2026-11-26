@@ -6,6 +6,7 @@
 #   scripts/loop/run.sh work        loop:ready の issue を順に(PARALLELISM 本ずつ)実装し、green ならマージする
 #   scripts/loop/run.sh all         bootstrap → plan → work
 #
+# 普段は scripts/loop/ctl.sh start <上の引数> で裏で起動する(状態の表示と Orca のタブは ctl.sh を参照)。
 # ログと worktree はリポジトリの外(<repo>.loop/)に置く。
 set -euo pipefail
 
@@ -37,6 +38,9 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
 py() { python3 -I "$@"; }
+# 状態を <STATE_DIR>/status/ に書き、Orca があればワークスペースの表示にも出す。$1 step $2 詳細
+# 持ち場は STATUS_KEY(既定 main、並列の issue は issue-<番号>)。表示のためだけなので失敗しても続ける
+set_status() { py "$LOOP_DIR/loop_status.py" set "$STATE_DIR" "${STATUS_KEY:-main}" "$1" "${2:-}" "${LAST_LOG:-}" || true; }
 
 render_prompt() {
   py - "$1" <<'PY'
@@ -71,6 +75,7 @@ wait_for_reset() {
   fi
   echo "$until" >"$LIMIT_FILE"
   log "usage limit reached; waiting until $(date -d "@$until" '+%F %T')"
+  set_status waiting-limit "$(date -d "@$until" '+%m/%d %H:%M') まで"
   while [ "$(date +%s)" -lt "$until" ]; do sleep 60; done
   rm -f "$LIMIT_FILE"
 }
@@ -85,6 +90,8 @@ run_agent() {
   : >"$LAST_LOG.stderr"
   prompt="$(render_prompt "$LOOP_DIR/prompts/$tmpl")"
   local active=0 started rc partlog action target message
+  # この実行を Orca のその worktree のタブで流して見られるようにする
+  py "$LOOP_DIR/loop_status.py" agent-tab "$STATE_DIR" "$dir" "$name" "$base" "$REPO_ROOT" || true
   while :; do
     part=$((part + 1))
     partlog="$base.part$part"
@@ -106,6 +113,7 @@ run_agent() {
       args=(timeout --signal=KILL "$remaining" python3 -I "$LOOP_DIR/codex_agent.py" "$action" "$target" "$message")
     fi
     log "$LOOP_AGENT: $name ($tmpl, part $part) in $dir -> $LAST_LOG"
+    set_status agent "$name"
     started=$SECONDS
     local output="$partlog.jsonl"
     if [ "$LOOP_AGENT" = codex ]; then output="$partlog.raw.jsonl"; fi
@@ -137,6 +145,8 @@ run_agent() {
       *) break ;;
     esac
   done
+  # 見るタブ(loop_status.py follow)に、この実行が終わったことを知らせる
+  touch "$base.done"
 }
 
 # 最終メッセージの最後の "RESULT:" 行を出す
@@ -156,6 +166,7 @@ post_metrics() {
 # 人間の判断を求めた回数を数えるため、escalation のたびに1行残す。$1 issue(無ければ空) $2 誰が(orchestrator|agent) $3 理由
 # 計測は bootstrap の後から。cmd_bootstrap の中(LOOP_PHASE=bootstrap)では記録しない
 record_escalation() {
+  set_status escalated "${1:+#$1 }$3"
   [ "${LOOP_PHASE:-}" != bootstrap ] || return 0
   py - "$METRICS_DIR/escalations.jsonl" "$1" "$2" "$3" <<'PY' || true
 import json, sys
@@ -296,6 +307,7 @@ wait_boot_ci() {
     sleep "$poll"
   done
   log "waiting for required checks on $BOOT_PR ($BOOT_HEAD)"
+  set_status waiting-ci "$BOOT_PR $BOOT_HEAD"
   BOOT_CI="$(py "$LOOP_DIR/feature_ci.py" "$BOOT_PR" "$BOOT_HEAD" "$REQUIRED_CHECKS" "$POLL_SECONDS" "$FEATURE_CI_TIMEOUT_SECONDS" 2>&1)" || rc=$?
   return "$rc"
 }
@@ -436,6 +448,7 @@ cmd_bootstrap() {
 
     rd="$CANARY_DIR/round-$round"
     log "checking canaries"
+    set_status waiting-canaries "round $round"
     report="$(py "$LOOP_DIR/canaries.py" check "$branch" "$SPEC" "$rd")" && r=ok || r=ng
     py "$LOOP_DIR/canaries.py" close
     if [ "$r" = ok ]; then
@@ -558,7 +571,7 @@ run_issue() (
   wt="$(ensure_worktree "$branch")"
   handoff="$(mktemp -d)"
   trap 'rm -rf -- "$handoff"' EXIT
-  export ISSUE=$n BRANCH=$branch WORKTREE=$wt PR_BODY="$handoff/pr.md"
+  export ISSUE=$n BRANCH=$branch WORKTREE=$wt PR_BODY="$handoff/pr.md" STATUS_KEY="issue-$n"
   export CI_HISTORY="$STATE_DIR/issue-$n-ci-history"
   touch "$CI_HISTORY"
   attempt=$(($(grep -c '^Attempt ' "$CI_HISTORY" || true) + 1))
@@ -588,6 +601,7 @@ run_issue() (
       return
     fi
     echo "Attempt $attempt $head $pr" >>"$CI_HISTORY"
+    set_status waiting-ci "$pr $head"
     if py "$LOOP_DIR/feature_ci.py" "$pr" "$head" "$REQUIRED_CHECKS" "$POLL_SECONDS" "$FEATURE_CI_TIMEOUT_SECONDS" >"$handoff/ci"; then
       cat "$handoff/ci" >>"$CI_HISTORY"
       echo >>"$PR_BODY"
@@ -596,6 +610,7 @@ run_issue() (
           post_metrics "$n" "$pr" && merge_pr "$pr" "$wt" --match-head-commit "$head"; then
         gh issue edit "$n" --remove-label loop:in-progress >/dev/null || true
         log "merged #$n: $pr"
+        set_status done "merged $pr"
       else
         escalate_issue "$n" "could not finalize green reviewed commit $head on $pr"
       fi
@@ -650,6 +665,13 @@ cmd_work() {
 }
 
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+
+# 起動と終わり方を記録する。シグナルでも EXIT の trap が走るよう、終了コードに直して抜ける
+py "$LOOP_DIR/loop_status.py" start "$STATE_DIR" "$$" "$*" "${LOOP_RUN_LOG:-}" "$REPO_ROOT" || true
+trap 'rc=$?; py "$LOOP_DIR/loop_status.py" finish "$STATE_DIR" "$rc" || true' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
 
 case "${1:-}" in
   bootstrap) cmd_bootstrap ;;

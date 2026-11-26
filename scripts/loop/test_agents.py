@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 HERE = Path(__file__).resolve().parent
+# テストから本物の Orca の画面を触らない
+os.environ["LOOP_ORCA"] = "0"
 
 
 class AgentContracts(unittest.TestCase):
@@ -124,10 +126,11 @@ elif args[:2] == ["pr", "view"]:
 elif args[:1] == ["api"]:
     print("[]")
 """)
-        for f in ("claude", "gh"):
+        (tmp / "orca").write_text(f"#!/bin/sh\nprintf '%s\\n' \"$*\" >>{tmp}/orca-calls\n")
+        for f in ("claude", "gh", "orca"):
             (tmp / f).chmod(0o755)
         env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
-               "BOOT_PR_HEAD_POLL_SECONDS": "0"}
+               "BOOT_PR_HEAD_POLL_SECONDS": "0", "LOOP_ORCA": "1", "LOOP_ORCA_BIN": str(tmp / "orca")}
         env.pop("LOOP_AGENT", None)
         script = ('source "$1"; export WORKTREE="$2" ROUND=1 MAX_ROUNDS=4 BOOT_CI_HISTORY="$3/history"; touch "$BOOT_CI_HISTORY"; '
                   'rc=0; bootstrap_stage 1 finish finish green || rc=$?; echo "rc=$rc pr=$BOOT_PR"')
@@ -145,6 +148,14 @@ elif args[:1] == ["api"]:
             self.assertIn("The required checks failed on your last push", second)
             self.assertIn("guard FAILURE https://example.com/actions/runs/7/job/guard", second)
             self.assertNotIn("required checks failed", (tmp / "prompt-1").read_text())
+            # 状態は status に残り、エージェントごとに Orca のタブが開き、終わった印が付く
+            main = json.loads((tmp / "state/status/main.json").read_text())
+            self.assertEqual((main["step"], main["detail"].split()[0]), ("waiting-ci", "https://example.com/pr/2"))
+            creates = [c for c in (tmp / "orca-calls").read_text().splitlines() if c.startswith("terminal create")]
+            self.assertEqual(len(creates), 2)
+            self.assertIn("--title bootstrap-finish-r1", creates[0])
+            for c in creates:
+                self.assertTrue(Path(c.split(" follow ")[1].split(" --json")[0] + ".done").exists(), c)
 
     def test_bootstrap_stage_escalates_when_a_session_pushes_nothing_after_a_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -152,6 +163,9 @@ elif args[:1] == ["api"]:
             self.assertEqual(result.stdout.strip(), "rc=1 pr=https://example.com/pr/2", result.stderr)
             self.assertEqual((tmp / "sessions").read_text().strip(), "2")
             self.assertIn("issue edit 1 --add-label loop:escalated", (tmp / "gh-calls").read_text())
+            main = json.loads((tmp / "state/status/main.json").read_text())
+            self.assertEqual(main["step"], "escalated")
+            self.assertIn("pushed nothing new", main["detail"])
 
 
     def test_bootstrap_stage_waits_for_the_pr_head_to_catch_up_after_a_push(self):

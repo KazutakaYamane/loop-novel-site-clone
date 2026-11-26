@@ -27,7 +27,7 @@
 土台作り(カナリアを含む)と計画の CLI は、ループ起動時の `LOOP_AGENT` で選ぶ。省略すると Claude を使う。Codex は使用可能なモデル ID と、1 セッションの実行秒数を明示して起動する。以下の `plan` は `bootstrap` にも置き換えられる。
 
 ```bash
-LOOP_AGENT=codex CODEX_MODEL="<利用するモデル ID>" CODEX_MAX_SECONDS=1800 scripts/loop/run.sh plan
+LOOP_AGENT=codex CODEX_MODEL="<利用するモデル ID>" CODEX_MAX_SECONDS=1800 scripts/loop/ctl.sh start plan
 ```
 
 機能 issue の実装とレビューは `LOOP_AGENT` ではなく、`work` の引数で選ぶ(「ワーカーを選ぶ」を参照)。
@@ -101,7 +101,7 @@ Codex の各回の生ログは `*.partN.raw.jsonl`、共通の判定用ログは
 
 段階を積み終えたらカナリアで確かめる。不合格のときは、不合格のケースを担当ごとに分け(`fix-checks` と `fix-guard`)、担当ごとに別のセッションで直してから、もう一度カナリアで確かめる。
 
-途中で止まっても、`run.sh bootstrap` を実行し直せば、終わった段階とカナリアの round を飛ばして続きから始まる。終わった段階は `../loop-novel-site-clone.loop/bootstrap-stages.done` に記録される。
+途中で止まっても、`ctl.sh start bootstrap` で起動し直せば、終わった段階とカナリアの round を飛ばして続きから始まる。終わった段階は `../loop-novel-site-clone.loop/bootstrap-stages.done` に記録される。
 
 問題は、エージェントが作った CI をどう信用するかである。人間がレビューする代わりに、**カナリア**で確かめる。カナリアとは、わざと規則を破った PR のこと。たとえば次のようなもの。
 
@@ -229,6 +229,7 @@ push と PR 作成はレビュー後にまとめ役が行う。
 | `scripts/loop/config` | モデル、上限、並列数、必須の CI ジョブ名 | 人間 |
 | `scripts/loop/dependencies.md` | 依存の許可リスト | 人間 |
 | `scripts/loop/run.sh` | まとめ役 | 人間 |
+| `scripts/loop/ctl.sh`、`loop_status.py` | ループの起動・停止、状態の記録と表示、Orca のタブとワークスペースへの表示 | 人間 |
 | `scripts/loop/issues.py`、`validate-plan.sh` | 計画の検査、着手できる issue の判定 | 人間 |
 | `scripts/loop/canaries.py` | カナリアの仕様の検査と判定 | 人間 |
 | カナリアの仕様(`../loop-novel-site-clone.loop/canaries/`) | わざと規則を破る PR の一覧と、落ちるべき検査 | 仕様役。土台作りが終わると PR に公開される |
@@ -258,13 +259,29 @@ gh repo create <名前> --private --source . --push
 # 3. ラベル、ブランチ保護、土台作りの issue を作る
 scripts/loop/setup-github.sh
 # 4. 最初は土台作りだけを動かして、結果を確かめる
-scripts/loop/run.sh bootstrap
+scripts/loop/ctl.sh start bootstrap
 # 5. 問題なければ、計画と実装へ
-scripts/loop/run.sh plan
-scripts/loop/run.sh work
+scripts/loop/ctl.sh start plan
+scripts/loop/ctl.sh start work
 ```
 
-`scripts/loop/run.sh all` は、土台作り、計画、実装を止まらずに続けて行う。
+`scripts/loop/ctl.sh start all` は、土台作り、計画、実装を止まらずに続けて行う。`ctl.sh start` は `run.sh` に同じ引数を渡し、裏で(`setsid nohup`)起動する。ログは `../loop-novel-site-clone.loop/<引数>-run.log` に出る。前のログがあれば、日時を付けた名前に変えて残す。すでに動いていれば、2つ目は起動しない。
+
+### 動いているかを確かめる
+
+```bash
+scripts/loop/ctl.sh status   # 1行目が 動作中 / 待機中 / 人間待ち / 完了 / 停止 のどれか
+scripts/loop/ctl.sh watch    # ログと状態を流し続ける
+scripts/loop/ctl.sh stop     # run.sh と子のエージェントをまとめて止める
+```
+
+`run.sh` は段階を移るたびに `../loop-novel-site-clone.loop/status/` に状態を書く。`run.json` が起動と終わり方、`main.json`(並列の issue は `issue-<番号>.json`)がその時点の段階(エージェント実行中、CI 待ち、カナリアの判定待ち、利用上限のリセット待ち、人間待ち、完了、停止)。`status` はこれと `run.sh` のプロセスが生きているかを合わせて表示するので、kill や異常終了で記録が途切れても「停止」と分かる。
+
+Orca から起動したときは、Orca の画面にも出す。表示のためだけなので、Orca がなかったり呼び出しに失敗したりしても、ループは止まらない。
+
+- メインのチェックアウトのワークスペースに `loop: <引数>` のタブを開き、`watch` を流す。タブ名は状態に合わせて変わる(`loop ▶ エージェント実行中 …`、`loop ⏳ CI 待ち …`、`loop ⚠ 人間待ち` など)。タブは見るためだけのもので、閉じてもループは止まらない。`ctl.sh start` をやり直せば開き直す。
+- ワークスペースのボードの状態とコメントを、ループの状態に合わせる。人間待ちと停止のときは `in-review` にして未読の印を付ける。
+- エージェントを1回起動するたびに、その worktree(`../loop-novel-site-clone.loop/worktrees/` の下。Orca が作ったものではないので、`ctl.sh start` が表示を有効にする)にタブを開き、ツールの呼び出し、失敗、最後の RESULT と費用を流す。同じ worktree の前回のタブは閉じる。中身は `../loop-novel-site-clone.loop/logs/` の記録と同じ。
 
 `work` は、着手できる issue がなくなると止まる。全部終わったときは終了コード 0、人間の判断待ちの issue が残っているときは 2 を返す。
 
@@ -280,7 +297,7 @@ claude.ai のサブスクリプションで動かすと、5時間ごとや週ご
 
 ## ワーカーを選ぶ
 
-`scripts/loop/run.sh work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
+`scripts/loop/ctl.sh start work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
 
 Claude は実装・レビューともに `claude-opus-5-5` を使い、実装の推論量は `medium` とする。Codex の実装は `gpt-6.2-sol` の `medium`、レビューは `gpt-6.2-astra` を使う。どちらのワーカーも実装役が差分と影響範囲を見て、認可・公開範囲・並行更新に関わる場合はレビューを config の `REVIEW_LEVEL`(既定は `high`)で、通常は `medium` で行う。分類が欠けるか不正なら `REVIEW_LEVEL` を使う。Codex は指定したモデルと推論量も各実行の metrics に残す。
 
