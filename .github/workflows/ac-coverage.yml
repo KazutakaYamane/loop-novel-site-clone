@@ -22,6 +22,11 @@ jobs:
   ac-coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      checks: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -72,6 +77,33 @@ jobs:
           --playwright-json "$RUNNER_TEMP/playwright.json"
           --vitest-json "$RUNNER_TEMP/vitest.json"
           --pest-groups "$RUNNER_TEMP/pest-groups.txt"
+      # PR が guard ジョブを書き換えても、このジョブが base の guard.py を走らせ、違反があれば失敗の `guard` を残す
+      # (docs/adr/0014)。このジョブ自体の結果は変えない。guard と同じく、共有のスクリプトや action を使わず手順をここに書く
+      - name: Guard sentinel
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        working-directory: ${{ github.workspace }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --no-tags --unshallow origin "$BASE_REF"
+          else
+            git fetch --no-tags origin "$BASE_REF"
+          fi
+          if ! git cat-file -e "origin/$BASE_REF:.github/scripts/guard_checks.py" 2>/dev/null; then
+            echo "guard sentinel: origin/$BASE_REF has no .github/scripts/guard_checks.py; only the guard jobs check this PR"
+            exit 0
+          fi
+          dest="$RUNNER_TEMP/guard-sentinel"
+          rm -rf "$dest" && mkdir -p "$dest"
+          git archive "origin/$BASE_REF" .github/scripts | tar -x -C "$dest" --strip-components=2
+          if python3 "$dest/guard.py" --base "origin/$BASE_REF"; then
+            exit 0
+          fi
+          python3 "$dest/guard_checks.py" --sha "$HEAD_SHA" --sentinel --wait 180
 
   # guard は ci.yml、ac-coverage.yml、guard.yml の 3 か所に同じ手順で置く(docs/adr/0009)。
   # PR が 1 つを「何もせずに成功する」ように書き換えても、残りがその書き換えを保護パスの変更として落とす。

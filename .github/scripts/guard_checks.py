@@ -8,6 +8,10 @@ guard は 3 つのワークフローに同じ手順で置いてある(docs/adr/0
 足す失敗のチェックの external_id には自分のワークフローの実行の ID を入れる。落ちた guard どうしが互いの終わりを
 待ち続けないよう、そう印の付いた実行の guard は待たない。
 
+--sentinel は guard 以外のジョブの見張りの手順から呼ぶ(docs/adr/0014)。PR が guard ジョブをすべて書き換えても、
+書き換えていない他のジョブで base の guard.py が違反を見つけたら、自分のワークフローも含めたすべての guard の
+成功を失敗に書き換え、最後に失敗の `guard` を足す。見張りの印は external_id の "sentinel-" で付け、guard の印と分ける。
+
 標準ライブラリだけを使う。GITHUB_TOKEN に checks: write が要る。
 """
 
@@ -32,24 +36,31 @@ SUMMARY = (
     "この成功も失敗として扱う(docs/adr/0012)。"
 )
 
+SENTINEL_TITLE = "guard found a violation in another job"
+SENTINEL_SUMMARY = (
+    "guard 以外のジョブの見張りが、base ブランチの guard.py で AGENTS.md の違反を見つけた。PR が guard ジョブを"
+    "書き換えても、この失敗の `guard` が残る(docs/adr/0014)。"
+)
+
 
 def workflow_run(run: dict) -> str | None:
     m = re.search(r"/actions/runs/(\d+)(?:/|$)", run.get("details_url") or "")
     return m.group(1) if m else None
 
 
-def others(runs: list[dict], run_id: str) -> list[dict]:
-    return [r for r in runs if r.get("name") == NAME and workflow_run(r) != run_id]
+def others(runs: list[dict], run_id: str | None) -> list[dict]:
+    """run_id が None(見張り)なら、自分のワークフローのものも含めたすべての guard。"""
+    return [r for r in runs if r.get("name") == NAME and (run_id is None or workflow_run(r) != run_id)]
 
 
-def pending(runs: list[dict], run_id: str) -> list[dict]:
+def pending(runs: list[dict], run_id: str | None) -> list[dict]:
     """まだ終わっておらず、落ちたと印も付けていない、他のワークフローの guard。"""
     failed = {r.get("external_id") for r in runs
               if r.get("name") == NAME and r.get("conclusion") == "failure" and r.get("external_id")}
     return [r for r in others(runs, run_id) if r.get("status") != "completed" and workflow_run(r) not in failed]
 
 
-def to_fail(runs: list[dict], run_id: str) -> list[dict]:
+def to_fail(runs: list[dict], run_id: str | None) -> list[dict]:
     return [r for r in others(runs, run_id)
             if r.get("status") == "completed" and r.get("conclusion") in ("success", "neutral", "skipped")]
 
@@ -71,11 +82,14 @@ class Api:
         return self.call("GET", f"/commits/{sha}/check-runs?check_name={NAME}&filter=all&per_page=100")["check_runs"]
 
 
-def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sleep, clock=time.monotonic) -> None:
-    output = {"title": TITLE, "summary": SUMMARY}
+def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sleep, clock=time.monotonic,
+             sentinel: bool = False) -> None:
+    output = {"title": SENTINEL_TITLE, "summary": SENTINEL_SUMMARY} if sentinel else {"title": TITLE, "summary": SUMMARY}
+    mark = f"sentinel-{run_id}" if sentinel else run_id
+    scope = None if sentinel else run_id
     # 名前ごとに 1 つの結果だけを見る集計のために、失敗の guard を 1 つ足す
     try:
-        api.call("POST", "/check-runs", {"name": NAME, "head_sha": sha, "external_id": run_id,
+        api.call("POST", "/check-runs", {"name": NAME, "head_sha": sha, "external_id": mark,
                                          "status": "completed", "conclusion": "failure", "output": output})
         print("guard: added a failed guard check run")
     except urllib.error.HTTPError as e:
@@ -84,11 +98,11 @@ def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sl
     # 書き換えられた guard が終わる前に書き換えても、終わったときに成功で上書きされるので、終わりを待つ
     deadline = clock() + wait
     runs = api.guard_runs(sha)
-    while pending(runs, run_id) and clock() < deadline:
+    while pending(runs, scope) and clock() < deadline:
         sleep(interval)
         runs = api.guard_runs(sha)
 
-    succeeded = to_fail(runs, run_id)
+    succeeded = to_fail(runs, scope)
     for run in succeeded:
         try:
             api.call("PATCH", f"/check-runs/{run['id']}",
@@ -97,11 +111,12 @@ def escalate(api, sha: str, run_id: str, wait: int, interval: int, sleep=time.sl
         except urllib.error.HTTPError as e:
             print(f"::warning::guard: could not mark {run.get('details_url')} as failed: {e}")
 
-    # 書き換えを断られても、最後に終わった `guard` が失敗になるよう、成功した guard が終わった後にもう 1 つ足す
-    if not succeeded:
+    # 書き換えを断られても、最後に終わった `guard` が失敗になるよう、成功した guard が終わった後にもう 1 つ足す。
+    # 見張りは guard より遅く終わるジョブの最後に走るので、成功が見えなくても必ず足す
+    if not succeeded and not sentinel:
         return
     try:
-        api.call("POST", "/check-runs", {"name": NAME, "head_sha": sha, "external_id": run_id,
+        api.call("POST", "/check-runs", {"name": NAME, "head_sha": sha, "external_id": mark,
                                          "status": "completed", "conclusion": "failure", "output": output})
     except urllib.error.HTTPError as e:
         print(f"::warning::guard: could not add the last failed guard check run: {e}")
@@ -112,10 +127,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sha", required=True)
     p.add_argument("--wait", type=int, default=DEFAULT_WAIT, help="他の guard の終わりを待つ最長の秒数")
     p.add_argument("--interval", type=int, default=10)
+    p.add_argument("--sentinel", action="store_true", help="guard 以外のジョブの見張りとして走らせる")
     a = p.parse_args(argv)
     api = Api(os.environ.get("GITHUB_API_URL", "https://api.github.com"),
               os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
-    escalate(api, a.sha, os.environ["GITHUB_RUN_ID"], a.wait, a.interval)
+    escalate(api, a.sha, os.environ["GITHUB_RUN_ID"], a.wait, a.interval, sentinel=a.sentinel)
     return 0
 
 

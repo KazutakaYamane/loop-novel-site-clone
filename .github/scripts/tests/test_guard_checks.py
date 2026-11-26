@@ -140,5 +140,48 @@ class EscalateTest(unittest.TestCase):
         self.assertGreaterEqual(DEFAULT_WAIT, 30 * 60)
 
 
+def run_sentinel(api: FakeApi, wait: int = 120) -> Clock:
+    clock = Clock(api)
+    with redirect_stdout(io.StringIO()):
+        escalate(api, SHA, OWN, wait, 10, sleep=clock.sleep, clock=clock, sentinel=True)
+    return clock
+
+
+class SentinelTest(unittest.TestCase):
+    """guard 以外のジョブの見張り(docs/adr/0014)。PR がすべての guard を書き換えた場合を含む。"""
+
+    def test_marks_a_succeeded_guard_in_its_own_workflow_run_failed(self) -> None:
+        # 見張りと同じワークフローの guard も書き換えられうる
+        api = FakeApi([job(1, OWN), job(2, "200")])
+        run_sentinel(api)
+        self.assertEqual(api.by_id(1)["conclusion"], "failure")
+        self.assertEqual(api.by_id(2)["conclusion"], "failure")
+
+    def test_the_last_guard_is_a_failure_even_when_every_guard_succeeded_and_patches_are_refused(self) -> None:
+        api = FakeApi([job(1, OWN), job(2, "200"), job(3, "300")], forbid_patch=True)
+        run_sentinel(api)
+        self.assertEqual(api.runs[-1]["conclusion"], "failure")
+        self.assertEqual(api.runs[-1]["name"], "guard")
+
+    def test_adds_a_final_failure_even_when_no_guard_has_succeeded(self) -> None:
+        api = FakeApi([job(1, "200", conclusion="failure")])
+        run_sentinel(api)
+        added = [r for r in api.runs if r["id"] >= 1000]
+        self.assertEqual(len(added), 2)
+        self.assertTrue(all(r["conclusion"] == "failure" for r in added))
+
+    def test_its_mark_does_not_stop_guards_of_its_own_run_from_being_waited_for(self) -> None:
+        # 見張りの印は guard の「落ちた」印(external_id = 実行の ID)と分ける
+        api = FakeApi([job(1, OWN, "in_progress", None)])
+
+        def finish(now: float) -> None:
+            if now >= 30:
+                api.by_id(1).update(status="completed", conclusion="success")
+        api.ticks.append(finish)
+        run_sentinel(api)
+        self.assertEqual(api.by_id(1)["conclusion"], "failure")
+        self.assertTrue(all(r["external_id"] == f"sentinel-{OWN}" for r in api.runs if r["id"] >= 1000))
+
+
 if __name__ == "__main__":
     unittest.main()

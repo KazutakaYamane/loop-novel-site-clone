@@ -87,6 +87,34 @@ class GuardPlacementTest(unittest.TestCase):
             self.assertIn('"$RUNNER_TEMP/guard/guard_checks.py" --sha', step.group(1), path)
             self.assertLess(job.index("guard.py\" --base"), job.index("Fail every guard check"), path)
 
+    def test_every_other_pull_request_job_ends_with_a_guard_sentinel(self) -> None:
+        # PR が guard ジョブをすべて書き換えても、他のジョブが base の guard.py を走らせ、
+        # 違反があれば失敗の `guard` を残す(docs/adr/0014)
+        sentinels = 0
+        for path in sorted(WORKFLOWS.glob("*.y*ml")):
+            text = path.read_text()
+            block = on_block(text)
+            # マージの後だけ走るもの(metrics.yml)は PR のチェックにならない
+            if not re.search(r"(?m)^  pull_request:", block) or re.search(r"types:\s*\[\s*closed\s*\]", block):
+                continue
+            for name, job in jobs(text).items():
+                if name == "guard":
+                    continue
+                where = f"{path}:{name}"
+                self.assertRegex(job, r"(?m)^      checks: write\s*$", where)
+                steps = re.split(r"(?m)^      - ", job)
+                last = steps[-1]
+                self.assertTrue(last.startswith("name: Guard sentinel\n"), where)
+                self.assertRegex(last, r"(?m)^        if: always\(\)\s*$", where)
+                self.assertRegex(last, r"(?m)^        continue-on-error: true\s*$", where)
+                self.assertRegex(last, r"(?m)^        working-directory: \$\{\{ github\.workspace \}\}\s*$", where)
+                self.assertNotIn("ci-scripts.sh", last, where)
+                self.assertIn("git archive", last, where)
+                self.assertRegex(last, r"guard\.py\"? --base", where)
+                self.assertRegex(last, r"guard_checks\.py\"? --sha \"\$HEAD_SHA\" --sentinel", where)
+                sentinels += 1
+        self.assertGreaterEqual(sentinels, 5)
+
     def test_every_guard_outlasts_its_wait_for_the_other_guards(self) -> None:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         from guard_checks import DEFAULT_WAIT
