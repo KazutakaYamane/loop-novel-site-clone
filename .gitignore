@@ -3,3 +3,5 @@
 # カクヨムのログイン状態(Playwright の storage state)
 .auth/
 .env
+# Python のバイトコード(scripts/loop のテストを動かすとできる)
+__pycache__/

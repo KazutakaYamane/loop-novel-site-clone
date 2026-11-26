@@ -1,4 +1,4 @@
-"""カナリア(わざと規則を破った PR)の仕様の検査、判定、盗み見の監査。判定はエージェントではなくここで行う。
+"""カナリア(わざと規則を破った PR)の仕様の検査と判定。判定はエージェントではなくここで行う。
 
 カナリアの仕様は、CI を作る土台作り役とは別のエージェントが、CI ができる前に書く。
 仕様と結果はリポジトリの外(LOOP_CANARY_DIR)に置き、土台作り役には差分を見せない。
@@ -7,7 +7,6 @@
   canaries.py rules                          AGENTS.md から、カナリアで試すべき規則の一覧を ID 付きで出す
   canaries.py validate <spec>                仕様の書式と、全規則が試されているか(免除を除く)を調べる
   canaries.py check <branch> <spec> <dir>    カナリア PR を判定する。<dir> に差分、結果、土台作り役向けの報告を残す
-  canaries.py audit <log>                    土台作り役の実行記録に、カナリアを覗いた跡がないか調べる
   canaries.py close                          カナリア PR を閉じ、ブランチを消す
   canaries.py waive <rule> <reason>          判定役が「CI では試せない」と認めた規則を免除する
   canaries.py case <spec> <id>               仕様から1ケースを抜き出す
@@ -191,36 +190,6 @@ def check(branch: str, spec: Path, out: Path) -> int:
     return 0 if ok else 1
 
 
-def audit(log: Path) -> int:
-    canary_prs = set()
-    for f in CANARY_DIR.glob("round-*/prs.json"):
-        canary_prs |= set(json.loads(f.read_text(encoding="utf-8")))
-    hits = []
-    for line in log.read_text(encoding="utf-8").splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if e.get("type") != "assistant":
-            continue
-        for block in e.get("message", {}).get("content", []):
-            if block.get("type") != "tool_use" or block.get("name") in ("Write", "Edit", "MultiEdit"):
-                continue
-            text = json.dumps(block.get("input", {}), ensure_ascii=False)
-            if re.search(r"canar", text, flags=re.I) or str(CANARY_DIR) in text:
-                hits.append(f"{block.get('name')}: {text[:200]}")
-                continue
-            for num in re.findall(r"\b(?:pr\s+(?:diff|view|checkout|checks)|pulls/)\s*(\d+)", text):
-                if int(num) in canary_prs:
-                    hits.append(f"{block.get('name')} looked at canary PR #{num}: {text[:200]}")
-    if hits:
-        print("audit: the bootstrap iteration looked for canaries")
-        print("\n".join(f"- {h}" for h in hits))
-        return 1
-    print("audit: OK")
-    return 0
-
-
 def close() -> int:
     for pr in json.loads(gh("pr", "list", "--label", "loop:canary", "--state", "open", "--json", "number")):
         gh("pr", "close", str(pr["number"]), "--delete-branch", check=False)
@@ -241,6 +210,34 @@ def case(spec: Path, case_id: str) -> int:
     return 0 if m else 1
 
 
+GUARD_RULE = re.compile(r"^(CI5|CI6|FS\d+|PP\d+|DEP\d+)$")
+
+
+def split_feedback(feedback: str, outdir: str) -> int:
+    """feedback.md を担当ごとに分ける。checks: CI1-4 と、guard/ac-coverage 以外で落ちた対照。guard: それ以外"""
+    text = Path(feedback).read_text(encoding="utf-8")
+    blocks = [b for b in re.split(r"(?m)^(?=- case `)", text) if b.startswith("- case `")]
+    groups: dict[str, list[str]] = {"checks": [], "guard": []}
+    for b in blocks:
+        header = b.splitlines()[0]
+        rules = re.findall(r"(?:^|[\s,/(])(CI\d+|FS\d+|PP\d+|DEP\d+|control)(?=[\s,:)]|$)", header.split("` / rule", 1)[-1])
+        if any(GUARD_RULE.match(r) for r in rules):
+            g = "guard"
+        elif "control" in rules:
+            g = "guard" if re.search(r"actual: \[[^\]]*'(guard|ac-coverage)'", b) else "checks"
+        else:
+            g = "checks"
+        groups[g].append(b.rstrip() + "\n")
+    for g, items in groups.items():
+        out = Path(outdir) / f"fix-{g}.md"
+        if items:
+            out.write_text("".join(items), encoding="utf-8")
+            print(g)
+        elif out.exists():
+            out.unlink()
+    return 0
+
+
 def main(argv: list[str]) -> int:
     cmd, args = (argv[1] if len(argv) > 1 else ""), argv[2:]
     if cmd == "rules" and not args:
@@ -250,12 +247,12 @@ def main(argv: list[str]) -> int:
         return validate(Path(args[0]))
     if cmd == "check" and len(args) == 3:
         return check(args[0], Path(args[1]), Path(args[2]))
-    if cmd == "audit" and len(args) == 1:
-        return audit(Path(args[0]))
     if cmd == "close" and not args:
         return close()
     if cmd == "waive" and len(args) == 2:
         return waive(*args)
+    if cmd == "split-feedback" and len(args) == 2:
+        return split_feedback(*args)
     if cmd == "case" and len(args) == 2:
         return case(Path(args[0]), args[1])
     print(__doc__, file=sys.stderr)

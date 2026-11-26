@@ -39,10 +39,10 @@ The human author creates one issue labeled `loop:bootstrap` during initial setup
 
 These rules apply to the bootstrap iteration only:
 
-- It may create and change files under protected paths (for example the skeleton's `backend/phpunit.xml`, `frontend/tsconfig.json`, and `frontend/eslint.config.mjs`), except `scripts/loop/`, `.github/ISSUE_TEMPLATE/`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/kakuyomu-reference.md`, and `.gitignore`.
+- It may create and change files under protected paths (for example the skeleton's `backend/phpunit.xml`, `frontend/tsconfig.json`, and `frontend/eslint.config.mjs`), except `.codex/`, `scripts/loop/`, `.github/ISSUE_TEMPLATE/`, `AGENTS.md`, `CLAUDE.md`, `docs/requirements.md`, `docs/kakuyomu-reference.md`, and `.gitignore`.
 - It may add only the dependencies `scripts/loop/dependencies.md` allows.
 - It implements no acceptance criteria. The tests it adds exercise the skeleton and the checks themselves.
-- Its own PR's CI is not enough to finish. Its CI is tested with canaries: PRs that each deliberately break one rule in this file. The bootstrap iteration never sees the canaries. Do not search for them, read them, or look at their PRs or branches; the orchestrator audits the tool calls, and any attempt voids the round. Build CI that enforces every rule as written. When the orchestrator reports a canary that CI did not catch, fix the check so that it enforces the cited rule in general.
+- Its own PR's CI is not enough to finish. Its CI is tested with canaries: PRs that each deliberately break one rule in this file. The bootstrap iteration never sees the canaries. Do not search for them, read them, or look at their PRs or branches; the hook (`scripts/loop/guard-hook.py`) blocks such access. Build CI that enforces every rule as written. When the orchestrator reports a canary that CI did not catch, fix the check so that it enforces the cited rule in general.
 
 The harness self-test works without a human, and keeps CI and its test independent:
 
@@ -85,17 +85,17 @@ After the bootstrap PR is merged, these exceptions end and every protected path 
   - the AC coverage check: every acceptance criteria ID listed in the PR's `AC:` field has at least one test tagged with it (see "Tests")
   - the guard job that rejects the forbidden patterns listed under "Forbidden shortcuts", changes to existing files under "Protected paths", and dependency changes that `scripts/loop/dependencies.md` does not allow
 - For UI changes, attach the Playwright video or screenshots that CI produces to the PR description.
-- Never merge a PR yourself. When the checks in `REQUIRED_CHECKS` are green on the head commit, the orchestrator runs the review below, and merges the PR once the review is done and the checks are green again. A PR that touches a protected path cannot merge without the human's CODEOWNERS approval, so do not open one; escalate instead.
+- Never merge a PR yourself. For feature issues, the orchestrator opens or updates the PR after local review and merges only the reviewed head commit after every check in `REQUIRED_CHECKS` succeeds. A PR that touches a protected path cannot merge without the human's CODEOWNERS approval, so do not open one; escalate instead.
 
 ## Review before merge
 
-After an implementation iteration ends with green CI, the orchestrator starts a separate review iteration on the same branch. The reviewer did not write the change.
+After Red, Green, Refactor and local verification, the implementation worker commits locally. A fresh reviewer inspects the same worktree before the orchestrator pushes the branch and opens the PR.
 
-- It runs `/code-review` on the PR at the level `REVIEW_LEVEL` in `scripts/loop/config`, without `--fix`.
+- It reviews the local diff from the merge base with the default branch through HEAD, tracing affected callers and tests at the configured review depth.
 - It fixes only findings that meet all of these: severity `important` (a bug the change adds or makes worse); verdict `CONFIRMED`, or a concrete way it happens can be shown; and it can actually happen in this app as `docs/requirements.md` specifies it. Pre-existing bugs, nits, style, and refactoring are left alone.
-- It fixes each one test-first, with a test that reproduces the finding, under every rule in this file. The required checks must be green again afterwards.
-- It comments on the PR with every finding and what it did with each, including why the others were not fixed.
-- After fixes, the orchestrator reviews again, up to `MAX_REVIEW_ROUNDS`. It merges when a review finds nothing to fix, or when the last round's fixes are green.
+- It fixes each one test-first, with a test that reproduces the finding, under every rule in this file. It reruns the affected tests locally and commits the fix.
+- It records each finding and its disposition in the review handoff. The orchestrator includes this report in the PR.
+- After fixes, the orchestrator reviews again, up to `MAX_REVIEW_ROUNDS`. When a round finds nothing to fix or the last round’s fixes pass locally, the orchestrator publishes the reviewed commit and waits for CI. CI fixes follow the same local implementation and review steps before the next push.
 
 ## Tests
 
@@ -127,7 +127,7 @@ Do not modify these. The hook (`scripts/loop/guard-hook.py`) blocks edits, and C
 
 - existing test files under `backend/tests/`, `frontend/**/*.test.*`, `e2e/`
 - check configuration: `backend/phpstan.neon`, PHPStan baseline, ESLint config, `tsconfig*.json`, `backend/infection.json5`, `frontend/stryker.config.*`, coverage and visual-regression settings
-- `.github/`, `.claude/`, `scripts/loop/`, `AGENTS.md`, `CLAUDE.md`
+- `.github/`, `.claude/`, `.codex/`, `scripts/loop/`, `AGENTS.md`, `CLAUDE.md`
 - existing rules in `backend/AGENTS.md` and `frontend/AGENTS.md` (creating them and adding new rules is allowed)
 - `docs/requirements.md`, `docs/kakuyomu-reference.md`, `.gitignore`, existing files in `docs/adr/` (adding a new ADR is allowed)
 - `metrics/` (written only by CI)
@@ -161,7 +161,7 @@ An attempt is one push to the PR and the CI run it triggers. Stop the iteration 
 
 - the same check fails with the same error on 3 consecutive attempts
 - 2 consecutive attempts leave the diff effectively unchanged
-- the iteration reaches the attempt or cost limit set in `scripts/loop/config`
+- the iteration reaches its attempt limit, Claude cost limit, or explicitly configured Codex execution-time limit
 - the issue's acceptance criteria are ambiguous, contradict each other, or contradict an ADR
 - the change falls under "Changes that need a human" or needs a protected path
 

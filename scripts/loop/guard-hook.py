@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 # どのモードでも編集させない(初期設定で人間が書くもの)
-HARD = ["scripts/loop/**", "AGENTS.md", "CLAUDE.md", "docs/requirements.md",
+HARD = ["scripts/loop/**", ".codex/**", "AGENTS.md", "CLAUDE.md", "docs/requirements.md",
         "docs/kakuyomu-reference.md", ".gitignore", ".github/ISSUE_TEMPLATE/**", "metrics/**"]
 # bootstrap では新規作成だけ許す。通常は編集させない
 PROTECTED = [".github/**", ".claude/**", "backend/phpstan.neon", "backend/phpstan-baseline.neon",
@@ -42,9 +42,15 @@ APPEND_ONLY = ["backend/AGENTS.md", "frontend/AGENTS.md"]
 WRITE_VERBS = re.compile(
     r"(\bsed\b[^|;&]*\s-i|\bperl\b[^|;&]*\s-i|\bmv\b|\bcp\b|\brm\b|\btee\b|(?<![0-9&])>{1,2}(?!&)"
     r"|\btruncate\b|\bgit\s+(checkout|restore|rm|mv|apply|reset)\b|\bchmod\b|\bln\b|\bpatch\b|\bdd\b)")
+CHECK_WRAPPER = re.compile(
+    r"""(^|[;&|(\n]\s*)["']?(?:\$\{?LOOP_DIR\}?|[^\s"';&|()<>]*scripts/loop)/check-output\.sh["']?(?=\s|$)""")
 
 
 def deny(msg: str) -> None:
+    if os.environ.get("LOOP_AGENT") == "codex":
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                          "permissionDecision": "deny", "permissionDecisionReason": msg}}))
+        sys.exit(0)
     print(f"BLOCKED by scripts/loop/guard-hook.py: {msg} (AGENTS.md: Protected paths). "
           "If this change is required, escalate instead.", file=sys.stderr)
     sys.exit(2)
@@ -121,6 +127,8 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
 
 def check_bash(cmd: str) -> None:
     hide_canaries(cmd)
+    if os.environ.get("LOOP_LOCAL_REVIEW_FLOW") == "1" and re.search(r"\bgit\s+push\b|\bgh\s+pr\s+(?:create|edit|ready)\b", cmd):
+        deny("the orchestrator publishes the branch after local review")
     if "novel-submission-site-clone" in cmd or re.search(r"(^|[\s/])novel-site-clone(/|\s|$)", cmd):
         deny("novel-site-clone and its Compose project belong to the human-reviewed repository")
     if re.search(r"\bgh\s+pr\s+merge\b", cmd):
@@ -129,6 +137,10 @@ def check_bash(cmd: str) -> None:
         deny("only the orchestrator applies loop:ready and loop:in-progress")
     if re.search(r"\bgit\s+push\b.*(\s|:)(main|master)\b", cmd):
         deny("never push to the default branch")
+    # プロンプトはテストを scripts/loop/check-output.sh 経由で実行させる。コマンドの先頭に置いた
+    # このラッパーのパスまで保護パスへの書き込みと見なすと、リダイレクトを含むだけのテストが止まる。
+    # 引数の位置にあるパス(cp の宛先など)は消さないので、ラッパー自体の書き換えは引き続き止まる
+    cmd = CHECK_WRAPPER.sub(r"\1", cmd)
     if not WRITE_VERBS.search(cmd):
         return
     if MODE == "canary-read":
@@ -142,12 +154,58 @@ def check_bash(cmd: str) -> None:
             deny(f"shell command writes near protected path '{literal}'")
 
 
+def check_patch(patch: str, cwd: str) -> None:
+    root = toplevel(cwd)
+    path = None
+    additions_only = False
+    for line in patch.splitlines():
+        header = re.fullmatch(r"\*\*\* (Add File|Update File|Delete File|Move to): (.+)", line)
+        if header:
+            action, path = header.groups()
+            if action == "Move to" and additions_only:
+                deny("existing agent instructions cannot be moved")
+            check_path(path, cwd, {}, "Patch")
+            target = (Path(cwd) / path).resolve()
+            rel = target.relative_to(root).as_posix() if target.is_relative_to(root) else ""
+            additions_only = rel in APPEND_ONLY and default_content(root, rel) is not None
+            if additions_only and action != "Update File":
+                deny("existing agent instructions allow only additions")
+        elif additions_only and line.startswith("-"):
+            deny("existing agent instructions allow only additions")
+    if path is None:
+        deny("unrecognized patch format")
+
+
 def main() -> None:
     data = json.load(sys.stdin)
     name = data.get("tool_name", "")
     tool = data.get("tool_input", {}) or {}
     cwd = data.get("cwd") or os.getcwd()
-    if name == "Bash":
+    if os.environ.get("LOOP_AGENT") == "codex":
+        if name == "apply_patch":
+            check_patch(tool["command"], cwd)
+            return
+        if name not in ("Bash", "update_plan"):
+            deny(f"unsupported loop tool: {name}")
+        if name == "Bash" and not isinstance(tool.get("command"), str):
+            deny("missing shell command")
+    if name in ("apply_patch", "ApplyPatch"):
+        patch = tool if isinstance(tool, str) else tool.get("command") or tool.get("patch") or tool.get("input", "")
+        sections = re.split(r"^\*\*\* (Add File|Delete File|Update File|Move to): ([^\n]+)\n?", patch, flags=re.M)
+        if len(sections) == 1:
+            deny("unrecognized patch format")
+        root = toplevel(cwd)
+        for action, path, body in zip(sections[1::3], sections[2::3], sections[3::3]):
+            check_path(path, cwd, {}, "Patch")
+            target = (Path(cwd) / path).resolve()
+            if target.is_relative_to(root):
+                rel = target.relative_to(root).as_posix()
+                if match(rel, APPEND_ONLY) and default_content(root, rel) is not None:
+                    if action != "Update File" or re.search(r"^-", body, re.M) or "*** Move to:" in patch:
+                        deny("existing rules may only be extended")
+    elif name in ("exec_command", "shell_command"):
+        check_bash(tool.get("cmd") or tool.get("command", ""))
+    elif name == "Bash":
         check_bash(tool.get("command", ""))
     elif name in ("Read", "Grep", "Glob"):
         hide_canaries(json.dumps(tool, ensure_ascii=False))
@@ -158,4 +216,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        if os.environ.get("LOOP_AGENT") == "codex":
+            deny(f"guard could not inspect operation: {exc}")
+        raise
