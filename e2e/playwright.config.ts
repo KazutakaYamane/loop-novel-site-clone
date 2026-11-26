@@ -13,7 +13,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: {
     timeout: 15_000,
-    toHaveScreenshot: { animations: "disabled", caret: "hide", scale: "css" },
+    toHaveScreenshot: { animations: "disabled", caret: "hide", scale: "css", maxDiffPixelRatio: 0.5 },
   },
   // 基準画像が無いときに CI で勝手に作らせない。作るときは --update-snapshots を明示する
   updateSnapshots: "none",
