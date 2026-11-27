@@ -105,7 +105,8 @@ if ! grep -Eq '^APP_KEY=.+' backend/.env; then
 fi
 dc run --rm --no-deps e2e npm ci --no-audit --no-fund
 dc up -d --wait app nginx web
-dc exec -T app php artisan migrate --force --no-interaction
+# シードは何度入れても同じ状態になる(docs/adr/0030)。E2E と見た目の比較もこの DB で動く
+dc exec -T app php artisan migrate --seed --force --no-interaction
 
 # next dev は最初のリクエストでコンパイルするので、応答するまで待つ
 echo "worktree-setup: waiting for the frontend on port ${NEXT_PORT}"
