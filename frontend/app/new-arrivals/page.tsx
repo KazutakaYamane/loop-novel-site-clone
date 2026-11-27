@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   title: "新着小説 | ヨミカキ",
 };
 
-// 新着の 1 ページ目はトップに出す。ここは「次へ」から開く 2 ページ目以降(ADR 0027)
+// 新着の 1 ページ目はトップに出す。ここは「次へ」から開く 2 ページ目以降(ADR 0028)
 export default function NewArrivalsPage({ searchParams }: PageProps<"/new-arrivals">) {
   return (
     <main className={styles.main}>

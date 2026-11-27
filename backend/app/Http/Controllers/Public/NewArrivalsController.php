@@ -30,7 +30,7 @@ final class NewArrivalsController
             ->joinLateral($latestEpisode, 'latest_episode')
             ->select(['works.*', 'latest_episode.title as latest_episode_title'])
             ->orderByDesc('latest_episode.published_at')
-            // 公開時刻は秒までなので、同じ秒に並んだときは後に作った作品を前にする(ADR 0027)
+            // 公開時刻は秒までなので、同じ秒に並んだときは後に作った作品を前にする(ADR 0028)
             ->orderByDesc('works.id')
             ->simplePaginate(self::PER_PAGE);
 

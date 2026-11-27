@@ -21,7 +21,7 @@ type NewArrivalsResponse = {
   meta: { current_page: number };
 };
 
-// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(ADR 0027)
+// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(ADR 0028)
 export async function fetchNewArrivals(page: number): Promise<NewArrivals> {
   const path = `/api/new-arrivals?page=${page}`;
   const response = await fetch(internalApiUrl(path), {
