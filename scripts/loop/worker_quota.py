@@ -99,6 +99,23 @@ def select(state, codex_sessions, preferred, now):
     return str(min(resets.values()))
 
 
+def assign(state, codex_sessions, now):
+    """交互の順番の担当を選び、次の順番を残す。順番は起動し直しても引き継ぐ。
+    起動のたびに Claude から始めると、escalation で起動し直すたびに Claude に偏るため"""
+    turn = state / "mixed-next-provider"
+    try:
+        preferred = turn.read_text().strip()
+    except OSError:
+        preferred = ""
+    if preferred not in ("claude", "codex"):
+        preferred = "claude"
+    chosen = select(state, codex_sessions, preferred, now)
+    if chosen in ("claude", "codex"):
+        # 利用枠で代わりに選んだときは、飛ばした側に次の順番を残す
+        turn.write_text(("codex" if chosen == "claude" else "claude") + "\n")
+    return chosen, preferred
+
+
 if __name__ == "__main__":
     codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
-    print(select(Path(sys.argv[1]), codex_home / "sessions", sys.argv[2], int(time.time())))
+    print(*assign(Path(sys.argv[1]), codex_home / "sessions", int(time.time())))

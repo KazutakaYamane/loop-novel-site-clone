@@ -5,7 +5,9 @@ import tempfile
 import unittest
 
 
-select = runpy.run_path(str(Path(__file__).with_name("worker_quota.py")))["select"]
+quota = runpy.run_path(str(Path(__file__).with_name("worker_quota.py")))
+select = quota["select"]
+assign = quota["assign"]
 
 
 class WorkerQuota(unittest.TestCase):
@@ -67,3 +69,23 @@ class WorkerQuota(unittest.TestCase):
         self.assertEqual(self.provider("codex", now=300), "codex")
         (self.state / "limited-until").write_text("400\n")
         self.assertEqual(self.provider("claude"), "300")
+
+    def test_alternation_continues_across_restarts(self):
+        # ループを起動し直すたびに Claude から始めると、escalation のたびに Claude に偏る
+        picks = [assign(self.state, self.sessions, 100)[0] for _ in range(3)]
+        self.assertEqual(picks, ["claude", "codex", "claude"])
+        restarted = runpy.run_path(str(Path(__file__).with_name("worker_quota.py")))["assign"]
+        self.assertEqual(restarted(self.state, self.sessions, 100), ("codex", "codex"))
+
+    def test_fallback_keeps_the_turn_with_the_worker_that_was_skipped(self):
+        self.claude(0.91, 500)
+        self.assertEqual(assign(self.state, self.sessions, 100), ("codex", "claude"))
+        self.assertEqual(assign(self.state, self.sessions, 100), ("codex", "claude"))
+        self.assertEqual(assign(self.state, self.sessions, 500), ("claude", "claude"))
+        self.assertEqual(assign(self.state, self.sessions, 500), ("codex", "codex"))
+
+    def test_waiting_for_a_reset_does_not_move_the_turn(self):
+        self.claude(0.91, 500)
+        self.codex(91, 600)
+        self.assertEqual(assign(self.state, self.sessions, 100), ("500", "claude"))
+        self.assertEqual(assign(self.state, self.sessions, 500), ("claude", "claude"))
