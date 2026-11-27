@@ -91,6 +91,13 @@ test("the reader preserves blank lines and shows markup literally", { tag: "@AC-
   await expect(episodeBody).toBeVisible();
   expect(await episodeBody.textContent()).toBe(body);
   await expect(episodeBody).toHaveCSS("white-space", "pre-wrap");
+  const visibleLines = await episodeBody.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const textHeight = element.getBoundingClientRect().height
+      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    return textHeight / parseFloat(style.lineHeight);
+  });
+  expect(visibleLines).toBeCloseTo(body.split("\n").length, 1);
   await expect(episodeBody.locator("b")).toHaveCount(0);
   await guest.close();
 });

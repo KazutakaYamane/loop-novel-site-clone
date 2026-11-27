@@ -11,6 +11,12 @@
   overflow-wrap: anywhere;
 }
 
+/* pre-wrap だけでは末尾の改行に続く空行が高さを持たない。 */
+.body::after {
+  content: "";
+  display: inline-block;
+}
+
 @media (max-width: 767px) {
   .body {
     padding: 60px 20px 110px;
