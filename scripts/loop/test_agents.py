@@ -87,7 +87,7 @@ class AgentContracts(unittest.TestCase):
                     self.assertEqual(not denied, allowed, (agent, rel, result.stdout, result.stderr))
 
     def test_hook_opens_only_the_tagged_tests_the_human_approved(self):
-        # 人間がチャットで承認したテストは、オーケストレーターが LOOP_APPROVED_TESTS で渡す(docs/adr/0017)
+        # 人間がチャットで承認したテストは、オーケストレーターが LOOP_APPROVED_TESTS で渡す(docs/adr/0018)
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory) / "repo"
             files = {"e2e/tests/approved.spec.ts": 'test("a", { tag: "@AC-F1-1" }, async () => {});\n',
@@ -214,7 +214,7 @@ class AgentContracts(unittest.TestCase):
             self.assertEqual(oct((tmp / "cache.json").stat().st_mode & 0o777), "0o600")
 
     def test_the_loop_uses_the_github_app_for_gh_git_and_commits(self):
-        # 人間の判断はオーナーの書き込みだけが認められるので、ループは GitHub App で動く(docs/adr/0017)
+        # 人間の判断はオーナーの書き込みだけが認められるので、ループは GitHub App で動く(docs/adr/0018)
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             env, calls = self.app_server(tmp)

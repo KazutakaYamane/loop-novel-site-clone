@@ -23,4 +23,4 @@
 | [0015](0015-session-login-and-csrf.md) | ログイン状態は Laravel のセッションで持ち、ブラウザは Next.js と同じオリジンから API を呼ぶ | 採用 |
 | [0016](0016-visual-baselines-named-by-the-issue.md) | 見た目の基準画像は、issue が名指ししたものだけ撮り直してよい | 採用 |
 | [0017](0017-client-ip-and-demo-login-rate-limit.md) | 利用者の IP の決め方と、デモログインの回数の制限、E2E がその制限と両立する方法 | 採用 |
-| [0017](0017-human-decisions-from-the-owner-account.md) | 人間の判断は、メインのチャットがオーナーのアカウントで書く | 採用 |
+| [0018](0018-human-decisions-from-the-owner-account.md) | 人間の判断は、メインのチャットがオーナーのアカウントで書く | 採用 |

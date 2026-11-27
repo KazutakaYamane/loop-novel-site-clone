@@ -6,7 +6,7 @@ description: メインのチャットで work ループを見張り、escalation
 # ループの見張り役(メインのチャット)
 
 人間がするのは選ぶことだけ。選択肢を作る、選ばれたものを実行する、ループを再開する、はすべてこのチャットが行う。
-ループ(オーケストレーターとエージェント)は GitHub App で動き、このチャットはオーナー(`scripts/loop/config` の `CODEOWNER`)のアカウントで動く。CI と issues.py は、承認や回答をオーナーが書いたものだけ認める(docs/adr/0017)。
+ループ(オーケストレーターとエージェント)は GitHub App で動き、このチャットはオーナー(`scripts/loop/config` の `CODEOWNER`)のアカウントで動く。CI と issues.py は、承認や回答をオーナーが書いたものだけ認める(docs/adr/0018)。
 
 ## 始める前に
 

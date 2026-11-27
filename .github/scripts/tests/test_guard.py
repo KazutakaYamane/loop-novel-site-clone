@@ -423,7 +423,7 @@ class ProtectedPathTest(GuardTestCase):
         return {"author": {"login": author}, "body": f"人間が承認しました。\n\n{guard.APPROVAL_MARK}\n{lines}\n"}
 
     def test_changing_tagged_tests_the_owner_approved(self) -> None:
-        # 人間がメインのチャットで承認すると、オーナーのアカウントでこのコメントが書かれる(docs/adr/0017)
+        # 人間がメインのチャットで承認すると、オーナーのアカウントでこのコメントが書かれる(docs/adr/0018)
         self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
         self.repo.delete("backend/tests/Feature/ExistingTest.php")
         self.repo.commit()

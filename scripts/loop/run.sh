@@ -42,7 +42,7 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
 
 # ループの GitHub の操作(gh、git push、コミットの作者)を GitHub App にする。人間の判断はオーナーの
-# アカウントの書き込みだけが認められるので、ループが自分で承認を作れない(docs/adr/0017)
+# アカウントの書き込みだけが認められるので、ループが自分で承認を作れない(docs/adr/0018)
 use_loop_app() {
   local identity real_gh
   LOOP_APP_KEY_FILE="${LOOP_APP_KEY_FILE:-$STATE_DIR/app-key.pem}"
@@ -726,7 +726,7 @@ run_issue() (
   trap 'rm -rf -- "$handoff"' EXIT
   export ISSUE=$n BRANCH=$branch WORKTREE=$wt PR_BODY="$handoff/pr.md" STATUS_KEY="issue-$n"
   export CI_HISTORY="$STATE_DIR/issue-$n-ci-history"
-  # オーナーが issue のコメントで承認した既存テスト。hook はこれだけ編集を許す(docs/adr/0017)
+  # オーナーが issue のコメントで承認した既存テスト。hook はこれだけ編集を許す(docs/adr/0018)
   LOOP_APPROVED_TESTS="$(py "$LOOP_DIR/issues.py" approved "$n")" || { escalate_issue "$n" "could not read the approvals on the issue"; return; }
   export LOOP_APPROVED_TESTS
   touch "$CI_HISTORY"
