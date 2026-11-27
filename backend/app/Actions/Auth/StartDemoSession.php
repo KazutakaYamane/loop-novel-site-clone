@@ -25,7 +25,11 @@ final readonly class StartDemoSession
         // パスワードはこの変数の中にだけ置き、DB にはハッシュだけが残る
         $password = Str::random(64);
 
-        DB::transaction(fn () => $this->registerUser->handle($role->userName(), $email, $password));
+        DB::transaction(function () use ($role, $email, $password) {
+            $user = $this->registerUser->handle($role->userName(), $email, $password);
+            // 一覧で互いに見分けられるよう、重ならない ID を名前に足す(AC-F2-3)
+            $user->forceFill(['name' => $role->userName().' #'.$user->id])->save();
+        });
 
         return $this->logIn->handle($email, $password)
             ?? throw new RuntimeException('The demo user could not log in.');

@@ -32,3 +32,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 本物の上限に当てるのは `@AC-F2-7` の E2E だけにする。上限の案内などの見た目を撮るときは、`page.route` でデモログインの API に 429 を返させ、送信元の回数を使わない。
 - 手元では E2E と見た目の比較を `scripts/e2e.sh` で動かす(先に Laravel のキャッシュの回数を消す)。`docker compose run --rm e2e npx playwright test` を同じ worktree で繰り返すと、IP を分けない既存のテストが上限に当たる。
 - ブラウザが送った `X-User-IP` は `proxy.ts` が捨て、`lib/clientIp/` が決めた利用者の IP に置き換える。Laravel を呼ぶ経路を足すときも、利用者の IP をブラウザのヘッダーから直接取らない(docs/adr/0017)。
+- ログインが必要な画面は `app/my/` の下に置き、`app/my/layout.tsx` の `LoginGate` を通す。ゲストはログイン画面へ移る。画面で確かめるのは表示のためで、データは Laravel の `auth` で守る(docs/adr/0018)。
+- ブラウザから Laravel の更新の操作を呼ぶときは、`lib/api/csrfToken.ts` の `fetchCsrfToken()` でトークンを取る(docs/adr/0015)。
