@@ -48,6 +48,16 @@ class Work extends Model
     }
 
     /**
+     * 作品の中の並びは作った順(AC-F4-8)
+     *
+     * @return HasMany<Episode, $this>
+     */
+    public function episodes(): HasMany
+    {
+        return $this->hasMany(Episode::class)->orderBy('id');
+    }
+
+    /**
      * @return HasMany<Tag, $this>
      */
     public function tags(): HasMany

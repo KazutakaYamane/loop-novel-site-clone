@@ -24,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
             StartSession::class,
             PreventRequestForgery::class,
         ]);
+        // 話の本文は書いたとおりに残す。前後を削ると、段落の頭の全角スペースや末尾の空行が消える
+        $middleware->trimStrings(except: ['body']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
