@@ -137,21 +137,13 @@ final readonly class AozoraText
         return str_contains($character, '?') ? null : $character;
     }
 
-    // 「X」に傍点 は直前の X を、［＃傍点］…［＃傍点終わり］ は囲んだ文字を F5 の傍点(《《…》》)にする
+    // 「X」に傍点 は直前の X を、［＃傍点］…［＃傍点終わり］ は囲んだ文字を F5 の傍点(《《…》》)にする。
+    // 直前に X が無い注記は、後で他の注記と一緒に消える。行を作り直すループにしないのは、行が伸び続けて止まらない誤りを作らないため
     private function emphasis(string $line): string
     {
         $line = (string) preg_replace('/［＃傍点］(.+?)［＃傍点終わり］/u', '《《$1》》', $line);
 
-        while (preg_match('/［＃「([^」]+)」に[^］]*傍点］/u', $line, $match, PREG_OFFSET_CAPTURE) === 1) {
-            $before = substr($line, 0, $match[0][1]);
-            $target = $match[1][0];
-            if (str_ends_with($before, $target)) {
-                $before = substr($before, 0, -strlen($target)).'《《'.$target.'》》';
-            }
-            $line = $before.substr($line, $match[0][1] + strlen($match[0][0]));
-        }
-
-        return $line;
+        return (string) preg_replace('/((?:(?!［＃).)+?)［＃「\1」に[^］]*傍点］/u', '《《$1》》', $line);
     }
 
     /**

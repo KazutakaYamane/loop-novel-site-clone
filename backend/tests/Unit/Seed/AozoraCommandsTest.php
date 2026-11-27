@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonInterval;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -53,7 +54,9 @@ test('aozora:fetch saves each listed text as UTF-8, one request at a time with a
         ->and(File::get($this->dir.'/source/hana.txt'))->toBe("鼻\n禅智内供《ぜんちないぐ》\n");
     Http::assertSentCount(2);
     Http::assertSent(fn (Request $request) => $request->hasHeader('User-Agent', 'yomikaki-seed-fetch'));
-    Sleep::assertSequence([Sleep::for(2)->seconds()]);
+    // 2 件の取得の間に 1 回だけ、2 秒空ける(Sleep は fake なのでテストは待たない)
+    Sleep::assertSlept(fn (CarbonInterval $duration) => $duration->totalSeconds === 2.0, 1);
+    Sleep::assertSleptTimes(1);
 })->group('AC-F8-5');
 
 test('aozora:fetch does not request texts that are already saved', function () {
