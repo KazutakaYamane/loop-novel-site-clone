@@ -88,12 +88,12 @@ test("a published episode cannot be saved again", async () => {
 });
 
 test("other failures ask to try again, and nothing is sent without a csrf token", async () => {
-  const retry = { ok: false, errors: { form: ["保存できませんでした。時間をおいてもう一度お試しください。"] } };
+  const tryAgainLater = { ok: false, errors: { form: ["保存できませんでした。時間をおいてもう一度お試しください。"] } };
   stubLaravel(() => new Response(null, { status: 500 }));
-  expect(await createEpisode(5, input)).toEqual(retry);
+  expect(await createEpisode(5, input)).toEqual(tryAgainLater);
 
   sent = [];
   stubLaravel(() => Response.json(saved), new Response(null, { status: 500 }));
-  expect(await publishEpisode(5, 2, input)).toEqual(retry);
+  expect(await publishEpisode(5, 2, input)).toEqual(tryAgainLater);
   expect(sent).toEqual([]);
 });
