@@ -22,20 +22,20 @@ final readonly class SeedAozoraWorks
 {
     private const string SOURCE_NOTE = '出典：青空文庫（https://www.aozora.gr.jp/）';
 
-    public function handle(SeedDirectory $directory): void
+    /** @return list<Work> */
+    public function handle(SeedDirectory $directory): array
     {
-        DB::transaction(function () use ($directory) {
-            foreach ($directory->entries() as $entry) {
-                $this->seedWork($entry, $this->workData($directory, SeedDirectory::string($entry, 'slug')));
-            }
-        });
+        return DB::transaction(fn () => array_map(
+            fn (array $entry) => $this->seedWork($entry, $this->workData($directory, SeedDirectory::string($entry, 'slug'))),
+            $directory->entries(),
+        ));
     }
 
     /**
      * @param  array<array-key, mixed>  $entry
      * @param  array<array-key, mixed>  $data
      */
-    private function seedWork(array $entry, array $data): void
+    private function seedWork(array $entry, array $data): Work
     {
         $author = $this->author(SeedDirectory::string($entry, 'author_key'), SeedDirectory::string($data, 'author'));
         $title = SeedDirectory::string($data, 'title');
@@ -47,6 +47,9 @@ final readonly class SeedAozoraWorks
             'introduction' => SeedDirectory::string($entry, 'introduction')."\n\n".$this->shortCredit($credit),
             'genre' => Genre::from(SeedDirectory::string($entry, 'genre')),
             'serial_status' => SerialStatus::Completed,
+            'rating_cruel' => false,
+            'rating_violent' => false,
+            'rating_sexual' => false,
         ]);
         $work->save();
 
@@ -57,6 +60,8 @@ final readonly class SeedAozoraWorks
 
         // timestamp の列は時差を持たないので、アプリの時間帯に直してから入れる
         $this->seedEpisodes($work, $this->episodes($data), $credit, Carbon::parse(SeedDirectory::string($entry, 'published_at'))->setTimezone(now()->getTimezone()));
+
+        return $work;
     }
 
     private function author(string $key, string $name): User

@@ -1,4 +1,5 @@
 import { fetchCsrfToken } from "@/lib/api/csrfToken";
+import { reportExpiredDemoSession } from "@/lib/api/sessionExpired";
 import type { Work } from "./works";
 
 export type WorkSettings = Omit<Work, "id">;
@@ -19,6 +20,9 @@ async function send(path: string, method: "POST" | "PUT", body: unknown): Promis
     headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": token },
     body: JSON.stringify(body),
   });
+  if (reportExpiredDemoSession(response)) {
+    return { ok: false, errors: RETRY };
+  }
   if (response.ok) {
     const work: Work = await response.json();
     return { ok: true, work };
