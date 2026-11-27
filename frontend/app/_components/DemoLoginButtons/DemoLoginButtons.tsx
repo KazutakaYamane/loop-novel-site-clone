@@ -5,7 +5,9 @@ import { navigateTo } from "@/lib/navigation";
 import { startDemo, type DemoRole } from "@/lib/auth/startDemo";
 import styles from "./DemoLoginButtons.module.css";
 
-export function DemoLoginButtons() {
+type Props = { variant?: "page" | "header" };
+
+export function DemoLoginButtons({ variant = "page" }: Props) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -22,7 +24,7 @@ export function DemoLoginButtons() {
   }
 
   return (
-    <div className={styles.root} data-testid="demo-login-buttons">
+    <div className={`${styles.root} ${styles[variant]}`} data-testid="demo-login-buttons">
       <button type="button" className={styles.author} disabled={pending} onClick={() => start("author")}>
         デモ作者として始める
       </button>

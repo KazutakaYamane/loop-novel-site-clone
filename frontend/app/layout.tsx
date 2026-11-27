@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { CurrentHeaderActions } from "./_components/SiteHeader/CurrentHeaderActions";
 import { SiteFooter } from "./_components/SiteFooter/SiteFooter";
 import { SiteHeader } from "./_components/SiteHeader/SiteHeader";
 import "./globals.css";
@@ -13,7 +15,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ja">
       <body>
-        <SiteHeader />
+        <SiteHeader
+          actions={
+            <Suspense fallback={null}>
+              <CurrentHeaderActions />
+            </Suspense>
+          }
+        />
         {children}
         <SiteFooter />
       </body>

@@ -1,17 +1,13 @@
+/* ヘッダーの値は docs/kakuyomu-reference/layout.md の「ログイン」「新規登録」から採った */
+
 .root {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
-  padding: 40px var(--layout-side-padding);
-  font-size: 16px;
+  align-items: center;
 }
 
 .author,
 .reader {
-  min-width: 240px;
-  height: 48px;
-  padding: 0 24px;
   border: 0;
   font: inherit;
   cursor: pointer;
@@ -23,27 +19,79 @@
   opacity: 0.6;
 }
 
-/* 色は docs/kakuyomu-reference/layout.md の「新規登録」の青から採った */
 .author {
   color: var(--color-surface);
   background: var(--color-accent);
 }
 
 .reader {
-  color: var(--color-accent);
+  color: var(--color-text);
   background: transparent;
-  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
 .error {
   flex-basis: 100%;
   color: var(--color-error);
   font-size: 12px;
+}
+
+.header {
+  flex-wrap: nowrap;
+  font-size: 12.6px;
+}
+
+.header .reader {
+  order: -1;
+  padding: 0 16px;
+}
+
+.header .author {
+  height: 34px;
+  padding: 0 16px;
+}
+
+.header .error {
+  display: none;
+}
+
+.page {
+  justify-content: center;
+  gap: 16px;
+  padding: 40px var(--layout-side-padding);
+  font-size: 16px;
+}
+
+.page .author,
+.page .reader {
+  min-width: 240px;
+  height: 48px;
+  padding: 0 24px;
+}
+
+.page .reader {
+  color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.page .error {
   text-align: center;
 }
 
 @media (max-width: 767px) {
-  .root {
+  .header {
+    font-size: 11.5px;
+  }
+
+  .header .reader {
+    padding: 4px 6px;
+  }
+
+  .header .author {
+    height: auto;
+    padding: 4px 6px;
+  }
+
+  .page {
     flex-direction: column;
     padding: 24px 16px;
   }
