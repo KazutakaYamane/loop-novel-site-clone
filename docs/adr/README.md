@@ -32,3 +32,4 @@
 | [0024](0024-reader-publication-boundary.md) | 読者向けの作品と話は公開済みの話から決める | 採用 |
 | [0025](0025-reader-page-layout.md) | 読者向けの作品ページ・話ページ・見つからない画面の組み方 | 採用 |
 | [0026](0026-reader-ruby-notation.md) | 話のルビを Next.js のサーバーで組み立てる | 採用 |
+| [0027](0027-notation-emphasis-escape-and-linear-scan.md) | 傍点・`《` のエスケープ・入れ子を一度の線形走査で解釈する | 採用 |
