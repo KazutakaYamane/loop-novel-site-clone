@@ -37,8 +37,8 @@ PROTECTED = [".github/**", ".claude/**", ".agents/**", "backend/phpstan.neon", "
              "eslint.config.*", "**/.eslintrc*", "e2e/playwright.config.*"]
 # 既存のものだけ守る(新規の追加は許す)
 EXISTING_ONLY = ["backend/tests/**", "frontend/**/*.test.*", "e2e/**", "docs/adr/*.md"]
-# 既存の行を消さない追記だけ許す
-APPEND_ONLY = ["backend/AGENTS.md", "frontend/AGENTS.md"]
+# 既存の行を消さない追記だけ許す。ADR の一覧は新しい ADR を足すたびに行が増える(CI の guard と同じ)
+APPEND_ONLY = ["backend/AGENTS.md", "frontend/AGENTS.md", "docs/adr/README.md"]
 # CI の guard(.github/scripts/guard.py)と同じ判定。AC のタグを持たない既存のテストファイルは変えてよい
 AC_TAG = re.compile(r"AC-F\d+-\d+")
 # 見た目の基準画像は issue の Likely files に名指しされていれば変えてよい。issue を読むのは CI の guard に任せる
@@ -158,7 +158,7 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
         if bootstrap:
             return
         deny(f"{rel} is check or harness configuration")
-    if match(rel, EXISTING_ONLY) and existing is not None and not bootstrap:
+    if match(rel, EXISTING_ONLY) and rel not in APPEND_ONLY and existing is not None and not bootstrap:
         if (is_test_case_file(rel) and not AC_TAG.search(existing)) or SCREENSHOT.match(rel):
             return
         if is_test_case_file(rel) and rel in approved_tests():

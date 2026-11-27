@@ -112,6 +112,38 @@ class AgentContracts(unittest.TestCase):
                     denied = result.returncode != 0 or "deny" in result.stdout
                     self.assertEqual(not denied, allowed, (agent, rel, result.stdout, result.stderr))
 
+    def test_hook_lets_agents_append_to_the_adr_index_but_not_edit_adrs(self):
+        # 新しい ADR は docs/adr/README.md の一覧に足す(AGENTS.md)。CI の guard と同じく、一覧は追記だけ許す
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            files = {"docs/adr/README.md": "| ADR | 決定 |\n|---|---|\n| 0001 | a |\n",
+                     "docs/adr/0001-a.md": "# 0001 a\n"}
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            for rel, text in files.items():
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(text)
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                            "commit", "-q", "-m", "base"], check=True)
+            index = str(repo / "docs/adr/README.md")
+            cases = [
+                ("append to the index", True, "claude", {"tool_name": "Edit", "tool_input": {
+                    "file_path": index, "old_string": "| 0001 | a |\n", "new_string": "| 0001 | a |\n| 0002 | b |\n"}}),
+                ("rewrite a row of the index", False, "claude", {"tool_name": "Edit", "tool_input": {
+                    "file_path": index, "old_string": "| 0001 | a |", "new_string": "| 0001 | z |"}}),
+                ("append to the index by patch", True, "codex", {"tool_name": "apply_patch", "tool_input": {
+                    "command": "*** Begin Patch\n*** Update File: docs/adr/README.md\n@@\n | 0001 | a |\n+| 0002 | b |\n*** End Patch"}}),
+                ("edit an existing ADR", False, "claude", {"tool_name": "Write", "tool_input": {
+                    "file_path": str(repo / "docs/adr/0001-a.md"), "content": "# 0001 z\n"}}),
+                ("add a new ADR", True, "claude", {"tool_name": "Write", "tool_input": {
+                    "file_path": str(repo / "docs/adr/0002-b.md"), "content": "# 0002 b\n"}}),
+            ]
+            for label, allowed, agent, data in cases:
+                result = self.invoke("guard-hook.py", data={**data, "cwd": str(repo)}, LOOP_AGENT=agent,
+                                     LOOP_MODE="normal", LOOP_DEFAULT_REF="HEAD")
+                denied = result.returncode != 0 or "deny" in result.stdout
+                self.assertEqual(not denied, allowed, (label, result.stdout, result.stderr))
+
     def test_hook_keeps_agents_from_deciding_escalations(self):
         # 人間の判断はメインのチャットがオーナーのアカウントで書く。ループのエージェントには書かせない
         for command, denied in [("scripts/loop/ctl.sh approve 122", True), ('"$LOOP_DIR/ctl.sh" answer 122 ok', True),
