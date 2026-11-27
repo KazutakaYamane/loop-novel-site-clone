@@ -27,6 +27,12 @@ beforeEach(() => {
   visited.length = 0;
 });
 
+test("@AC-F4-9 the notice is not shown before the limit is reached", () => {
+  render(<EpisodeForm workId={5} episode={draft} />);
+
+  expect(screen.queryByText(notice, { exact: false })).toBeNull();
+});
+
 test("@AC-F4-9 saving a new episode over the limit shows the notice and stays on the editor", async () => {
   result = limited;
   render(<EpisodeForm workId={5} />);
