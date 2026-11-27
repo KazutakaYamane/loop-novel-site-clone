@@ -1,8 +1,26 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { DEMO_SESSION_EXPIRED_EVENT, isDemoSessionExpired } from "@/lib/api/sessionExpired";
+
+export function RefreshGuestSessionOnNavigation() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const location = `${pathname}?${searchParams}`;
+  const previousLocation = useRef(location);
+
+  useEffect(() => {
+    // 別のタブでログインした可能性がある。移動時にサーバーで cookie を読み直せば、ゲストにセッションを作らずに済む。
+    if (previousLocation.current !== location) {
+      previousLocation.current = location;
+      router.refresh();
+    }
+  }, [location, router]);
+
+  return null;
+}
 
 export function WatchDemoSession() {
   const pathname = usePathname();

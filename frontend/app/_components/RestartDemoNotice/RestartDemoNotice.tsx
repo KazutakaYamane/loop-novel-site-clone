@@ -1,13 +1,13 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { fetchCurrentSession } from "@/lib/auth/currentUser";
-import { WatchDemoSession } from "./WatchDemoSession";
+import { RefreshGuestSessionOnNavigation, WatchDemoSession } from "./WatchDemoSession";
 import styles from "./RestartDemoNotice.module.css";
 
 export async function RestartDemoNotice() {
   const { user, expired } = await fetchCurrentSession(await cookies());
   if (!expired) {
-    return user && <WatchDemoSession />;
+    return user ? <WatchDemoSession /> : <RefreshGuestSessionOnNavigation />;
   }
 
   return (

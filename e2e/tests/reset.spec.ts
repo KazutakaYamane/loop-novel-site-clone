@@ -82,3 +82,29 @@ test("following a site link after the demo session expires refreshes the shared 
     }
   },
 );
+
+test("a tab opened before login shows the restart notice on navigation after expiry",
+  { tag: "@AC-F9-4" },
+  async ({ page, browser, baseURL }) => {
+    await page.goto("/");
+    const otherTab = await page.context().newPage();
+    await otherTab.goto("/");
+    await otherTab.getByRole("main").getByRole("button", { name: "デモ読者として始める" }).click();
+    await expect(otherTab.getByRole("banner").getByTestId("current-user")).toBeVisible();
+
+    const logoutBrowser = await newClient(browser, baseURL, uniqueClientAddress());
+    try {
+      await logoutBrowser.addCookies(await otherTab.context().cookies());
+      const logoutTab = await logoutBrowser.newPage();
+      await logoutTab.goto("/");
+      await logoutTab.getByRole("banner").getByRole("button", { name: "ログアウト" }).click();
+      await expect(logoutTab.getByRole("banner").getByRole("link", { name: "ログイン" })).toBeVisible();
+
+      await page.getByRole("banner").getByRole("link", { name: "ログイン" }).click();
+      await expect(page).toHaveURL("/login");
+      await expect(page.getByRole("link", { name: "デモを始め直す" })).toBeVisible();
+    } finally {
+      await logoutBrowser.close();
+    }
+  },
+);

@@ -26,6 +26,7 @@ vi.mock("next/navigation", () => ({
 beforeEach(() => {
   state.cookie = "yomikaki_previous_login=encrypted";
   state.pathname = "/";
+  state.searchParams = new URLSearchParams();
   state.router.refresh.mockClear();
   state.router.replace.mockClear();
   vi.stubEnv("INTERNAL_API_URL", "http://nginx:8080");
@@ -59,6 +60,28 @@ test("a guest with only a session cookie gets no restart notice", async () => {
 
   expect(fetchApi).toHaveBeenCalledOnce();
   expect(screen.queryByRole("region")).not.toBeInTheDocument();
+});
+
+test("@AC-F9-4 a guest layout rechecks the cookies on each navigation without starting an anonymous session", async () => {
+  state.cookie = "";
+  const fetchApi = vi.fn<typeof fetch>();
+  vi.stubGlobal("fetch", fetchApi);
+
+  const view = render(await RestartDemoNotice());
+  expect(state.router.refresh).not.toHaveBeenCalled();
+
+  state.pathname = "/new-arrivals";
+  view.rerender(await RestartDemoNotice());
+  expect(state.router.refresh).toHaveBeenCalledTimes(1);
+
+  state.searchParams = new URLSearchParams({ page: "2" });
+  view.rerender(await RestartDemoNotice());
+  expect(state.router.refresh).toHaveBeenCalledTimes(2);
+
+  state.searchParams = new URLSearchParams({ page: "2" });
+  view.rerender(await RestartDemoNotice());
+  expect(state.router.refresh).toHaveBeenCalledTimes(2);
+  expect(fetchApi).not.toHaveBeenCalled();
 });
 
 test("an authenticated layout checks again after navigation and refreshes only when expiry is reported", async () => {
