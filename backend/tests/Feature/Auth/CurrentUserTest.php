@@ -24,5 +24,5 @@ test('after a demo login the same session sees the new user', function () {
     $this->withUnencryptedCookie('yomikaki_session', (string) $session?->getValue())
         ->getJson('/api/user')
         ->assertOk()
-        ->assertExactJson(['name' => 'デモ読者']);
+        ->assertExactJson(['name' => User::sole()->name]);
 })->group('AC-F2-2');

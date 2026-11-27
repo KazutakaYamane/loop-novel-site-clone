@@ -1,3 +1,5 @@
+import { fetchCsrfToken } from "@/lib/api/csrfToken";
+
 export type DemoRole = "author" | "reader";
 
 // 始められたら true、IP ごとの回数の上限なら "rate-limited"、それ以外の失敗は false
@@ -9,17 +11,11 @@ const resultByStatus: Partial<Record<number, DemoStartResult>> = {
   429: "rate-limited",
 };
 
-// 安全でないオリジン(http の E2E など)ではブラウザが Sec-Fetch-Site を付けないので、
-// 先にセッションの CSRF トークンを取って付ける(docs/adr/0015)
 export async function startDemo(role: DemoRole): Promise<DemoStartResult> {
-  const tokenResponse = await fetch("/api/csrf-token", {
-    headers: { Accept: "application/json" },
-    credentials: "same-origin",
-  });
-  if (!tokenResponse.ok) {
+  const token = await fetchCsrfToken();
+  if (token === null) {
     return false;
   }
-  const { token }: { token: string } = await tokenResponse.json();
   const response = await fetch("/api/demo-sessions", {
     method: "POST",
     credentials: "same-origin",

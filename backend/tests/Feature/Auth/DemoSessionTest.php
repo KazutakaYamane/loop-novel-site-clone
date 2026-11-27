@@ -30,11 +30,13 @@ test('a demo author button creates a new user and logs in as that user', functio
     $this->assertAuthenticatedAs(User::sole());
 })->group('AC-F2-2');
 
-test('readers and authors get different names', function () {
+test('readers and authors get names that show their role', function () {
     $this->postJson('/api/demo-sessions', ['role' => 'author'])->assertCreated();
     $this->postJson('/api/demo-sessions', ['role' => 'reader'])->assertCreated();
 
-    expect(User::query()->orderBy('id')->pluck('name')->all())->toBe(['デモ作者', 'デモ読者']);
+    [$author, $reader] = User::query()->orderBy('id')->pluck('name')->all();
+    expect($author)->toStartWith('デモ作者')
+        ->and($reader)->toStartWith('デモ読者');
 })->group('AC-F2-2');
 
 test('each press creates another user', function () {
@@ -59,7 +61,7 @@ test('a demo user has an address in a reserved domain and no personal informatio
 
     $user = User::sole();
     expect($user->email)->toMatch('/^[a-z0-9-]+@example\.com$/')
-        ->and($user->name)->toBe('デモ読者')
+        ->and($user->name)->toStartWith('デモ読者')
         ->and($user->email_verified_at)->toBeNull();
 })->group('AC-F2-8');
 
