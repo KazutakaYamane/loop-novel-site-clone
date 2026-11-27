@@ -41,28 +41,28 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
 
-# ループの GitHub の操作(gh、git push、コミットの作者)を bot のアカウントにする。人間の判断はオーナーの
+# ループの GitHub の操作(gh、git push、コミットの作者)を GitHub App にする。人間の判断はオーナーの
 # アカウントの書き込みだけが認められるので、ループが自分で承認を作れない(docs/adr/0017)
-use_bot_account() {
-  local file="${BOT_TOKEN_FILE:-$STATE_DIR/bot-token}" login email
-  if [ -z "${BOT_LOGIN:-}" ]; then log "set BOT_LOGIN in scripts/loop/config (the loop's GitHub account)"; return 78; fi
-  if [ "${BOT_LOGIN,,}" = "${CODEOWNER,,}" ]; then log "BOT_LOGIN must differ from CODEOWNER"; return 78; fi
-  if [ ! -s "$file" ]; then log "missing the bot's GitHub token: $file"; return 78; fi
-  GH_TOKEN="$(tr -d '[:space:]' <"$file")"
-  # オーナーの gh の設定(~/.config/gh)を読ませない
-  GH_CONFIG_DIR="$STATE_DIR/gh-bot"
+use_loop_app() {
+  local identity real_gh
+  LOOP_APP_KEY_FILE="${LOOP_APP_KEY_FILE:-$STATE_DIR/app-key.pem}"
+  if [ -z "${LOOP_APP_ID:-}" ]; then log "set LOOP_APP_ID in scripts/loop/config (the loop's GitHub App)"; return 78; fi
+  if [ ! -s "$LOOP_APP_KEY_FILE" ]; then log "missing the GitHub App's private key: $LOOP_APP_KEY_FILE"; return 78; fi
+  real_gh="$(type -ap gh | grep -vxF "$LOOP_DIR/bin/gh" | head -n1)"
+  if [ -z "$real_gh" ]; then log "missing CLI: gh"; return 69; fi
+  export LOOP_APP_ID LOOP_APP_KEY_FILE LOOP_REAL_GH="$real_gh" LOOP_APP_TOKEN_CACHE="$STATE_DIR/app-token.json"
+  # オーナーの gh の設定(~/.config/gh)と、手元にあるトークンを使わせない
+  export GH_CONFIG_DIR="$STATE_DIR/gh-app" PATH="$LOOP_DIR/bin:$PATH"
   mkdir -p "$GH_CONFIG_DIR"
-  export GH_TOKEN GH_CONFIG_DIR
-  unset GITHUB_TOKEN
-  login="$(gh api user --jq .login)" || { log "GitHub rejected the bot's token in $file"; return 78; }
-  if [ "${login,,}" != "${BOT_LOGIN,,}" ]; then log "the token in $file belongs to $login, not $BOT_LOGIN"; return 78; fi
-  email="${BOT_GIT_EMAIL:-$BOT_LOGIN@users.noreply.github.com}"
-  export GIT_AUTHOR_NAME="$BOT_LOGIN" GIT_COMMITTER_NAME="$BOT_LOGIN" GIT_AUTHOR_EMAIL="$email" GIT_COMMITTER_EMAIL="$email"
-  # git push もオーナーの資格情報ではなく bot のトークンで行う。空の helper で既存の設定を打ち消してから足す
+  unset GH_TOKEN GITHUB_TOKEN
+  identity="$(py "$LOOP_DIR/app_token.py" identity)" || { log "GitHub rejected the App (LOOP_APP_ID=$LOOP_APP_ID)"; return 78; }
+  GIT_AUTHOR_NAME="$(sed -n 2p <<<"$identity")"
+  GIT_AUTHOR_EMAIL="$(sed -n 3p <<<"$identity")"
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+  # git push もオーナーの資格情報ではなく App のトークンで行う。空の helper で既存の設定を打ち消してから足す
   export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0= \
-    GIT_CONFIG_KEY_1=credential.https://github.com.helper
-  export GIT_CONFIG_VALUE_1='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
-  log "GitHub account: $login"
+    GIT_CONFIG_KEY_1=credential.https://github.com.helper GIT_CONFIG_VALUE_1="!python3 -I $LOOP_DIR/app_token.py credential"
+  log "GitHub account: $GIT_AUTHOR_NAME"
 }
 py() { python3 -I "$@"; }
 monotonic_ms() { py -c 'import time; print(time.monotonic_ns() // 1_000_000)'; }
@@ -851,7 +851,7 @@ trap 'exit 130' INT
 trap 'exit 129' HUP
 
 case "${1:-}" in
-  bootstrap|plan|work|all) use_bot_account || exit $? ;;
+  bootstrap|plan|work|all) use_loop_app || exit $? ;;
 esac
 
 case "${1:-}" in

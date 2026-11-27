@@ -8,7 +8,7 @@
   issues.py slug N            ブランチ名に使う slug を出す
   issues.py approved N        オーナーが承認した既存テストのパスを 1 行ずつ出す
   issues.py escalations       未解決の escalation と、その申請・最後のコメントを JSON で出す
-メインのチャットがオーナーのアカウントで呼ぶもの(bot のアカウントでは断る):
+メインのチャットがオーナーのアカウントで呼ぶもの(ループの GitHub App のトークンでは断る):
   issues.py approve N [PATH ...]  既存テストの変更を承認する。PATH を省くと最新の申請をそのまま承認する
   issues.py answer N TEXT         人間の判断をコメントに残し、再開できるようにする
   issues.py replan N TEXT         分け直しに回す
@@ -292,8 +292,12 @@ class NotOwner(Exception):
 
 
 def as_owner() -> None:
-    """操作するのがオーナーのアカウントか確かめる。ループは bot のトークンで動くので、ここで止まる。"""
-    login = gh("api", "user", "--jq", ".login").strip()
+    """操作するのがオーナーのアカウントか確かめる。ループは GitHub App のトークンで動くので、ここで止まる
+    (App のトークンでは /user を読めず、読めても App の名前になる)。"""
+    try:
+        login = gh("api", "user", "--jq", ".login").strip()
+    except subprocess.CalledProcessError:
+        login = "an account that is not a user (the loop's GitHub App?)"
     if not owner() or login.lower() != owner().lower():
         raise NotOwner(f"run this as {owner() or 'CODEOWNER'} (the main chat), not as {login}")
 

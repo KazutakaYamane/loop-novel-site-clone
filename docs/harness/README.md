@@ -259,7 +259,7 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 3. 選ばれたものを書く。既存テストの変更なら `ctl.sh approve <issue>`、解釈や再開の指示なら `ctl.sh answer <issue> "<内容>"`、分け直すなら `ctl.sh replan <issue> "<理由>"`。どれも `loop:escalated` を外し、`answer` と `approve` は `loop:ready` に戻す。
 4. ループが止まっていれば `ctl.sh start work` で起動し直す。作業途中のブランチは残っているので、エージェントはそこから続ける。
 
-承認と回答は、オーナーのアカウントが書いたコメント(`<!-- loop:test-change-approval -->`、`<!-- loop:human-answer -->` の印)だけが効く。ループは bot のアカウントで動くので、ループが同じ形のコメントを書いても、CI の guard と `issues.py` は無視する。`ctl.sh` の判断のコマンドも、オーナーのアカウントでなければ断る。
+承認と回答は、オーナーのアカウントが書いたコメント(`<!-- loop:test-change-approval -->`、`<!-- loop:human-answer -->` の印)だけが効く。ループは GitHub App で動くので、ループが同じ形のコメントを書いても、CI の guard と `issues.py` は無視する。`ctl.sh` の判断のコマンドも、オーナーのアカウントでなければ断る。
 
 ## ファイルの配置
 
@@ -280,6 +280,7 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 | `scripts/loop/codex_worker.py` | 機能 issue での Codex の RESULT の確認と metrics の記録 | 人間 |
 | `scripts/loop/feature_ci.py`、`check-output.sh` | レビュー済みコミットの必須 CI の待機、テスト出力の要約 | 人間 |
 | `scripts/loop/guard-hook.py` | 作業中の見張り | 人間 |
+| `scripts/loop/app_token.py`、`scripts/loop/bin/gh` | ループの GitHub App のトークンを作り直しながら gh と git push に渡す | 人間 |
 | `scripts/loop/prompts/` | 各段階でエージェントに渡す指示文 | 人間 |
 | `scripts/loop/setup-github.sh` | ラベル、ブランチ保護、最初の issue を作る | 人間 |
 | `.github/ISSUE_TEMPLATE/feature.md` | issue の書式 | 人間 |
@@ -305,12 +306,12 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 ## 動かし方
 
 ```bash
-# 1. scripts/loop/config の CODEOWNER に自分の GitHub のユーザー名を、BOT_LOGIN にループ用の bot のアカウント名を入れる
-#    (bot は別の GitHub アカウント。classic token(repo の権限)を ../loop-novel-site-clone.loop/bot-token に置く)
+# 1. scripts/loop/config の CODEOWNER に自分の GitHub のユーザー名を入れる。ループ用の GitHub App を作り(権限は config に書いてある)、
+#    このリポジトリだけにインストールして、App ID を LOOP_APP_ID に、秘密鍵を ../loop-novel-site-clone.loop/app-key.pem に置く
 # 2. git の初期化、GitHub へ push
 git init -b main && git add -A && git commit -m "初期設定"
 gh repo create <名前> --private --source . --push
-# 3. ラベル、ブランチ保護、bot の招待、土台作りの issue を作る(招待は bot のアカウントで受ける)
+# 3. ラベル、ブランチ保護、土台作りの issue を作り、GitHub App が使えるかを確かめる
 scripts/loop/setup-github.sh
 # 4. 最初は土台作りだけを動かして、結果を確かめる
 scripts/loop/ctl.sh start bootstrap
@@ -395,7 +396,7 @@ Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番
 
 - **利用上限の検出**: 上限に当たったことは、Claude Code が出す `rate_limit_event` とエラーの文言から見分けている。偽の Claude Code を使った試験では動いたが、本物の上限に当たったときの出力では、まだ確かめていない。見分けられなかった場合は、従来どおりその issue が人間の判断待ちになる。
 - **費用の上限**: `MAX_COST_USD` は API に換算した額で、サブスクリプションで実際に払う額ではない。サブスクリプションのときにこの上限が効くかどうかは、まだ確かめていない。また、resume した実行の費用が、その回の分だけなのか、セッション全体の累計なのかも確かめていない。累計だった場合は、合計を多めに数えることになる(止まるのが早くなる方向なので、危険はない)。
-- **ブランチ保護**: 「承認は不要、ただし守るべきファイルを含むときは CODEOWNERS の承認が要る」という設定が、意図どおりに効くかはまだ確かめていない。PR を出すのは bot のアカウントなので、守るべきファイルを含む PR はオーナーが承認できる(docs/adr/0017 より前は、同じアカウントで出していたので管理者としてマージしていた)。
+- **ブランチ保護**: 「承認は不要、ただし守るべきファイルを含むときは CODEOWNERS の承認が要る」という設定が、意図どおりに効くかはまだ確かめていない。PR を出すのは GitHub App なので、守るべきファイルを含む PR はオーナーが承認できる(docs/adr/0017 より前は、同じアカウントで出していたので管理者としてマージしていた)。
 - **オーナーの資格情報**: ループのエージェントはオーナーと同じ OS のユーザーで動く。オーナーの gh の設定や SSH の鍵を読んで持ち替えることは、hook が文字列から推測して止めるだけで、完全には塞げない。塞ぐには、ループを別の OS のユーザーかコンテナで動かす。
 - **承認したテストの中身**: 承認されたテストの中で起きた意図しない弱体化は、CI では見つけられない。レビュー役が申請の内容と照らし、PR の差分に残る。
 - **並列実行**: ブランチ保護で「main に追いついていること」を求めているので、並列数を2以上にすると、先にマージされた変更に追いつけずにマージが失敗する。いまは並列数1で動かす前提。

@@ -1,3 +1,5 @@
+import base64
+import http.server
 import json
 import os
 from pathlib import Path
@@ -5,6 +7,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -141,52 +144,119 @@ class AgentContracts(unittest.TestCase):
         read = {"tool_name": "Read", "tool_input": {"file_path": os.path.expanduser("~/.config/gh/hosts.yml")}}
         self.assertEqual(self.invoke("guard-hook.py", data=read, LOOP_AGENT="claude", LOOP_MODE="normal").returncode, 2)
 
-    def bot_env(self, tmp, login):
-        (tmp / "gh").write_text(f"""#!/bin/sh
-echo "$GH_TOKEN $GH_CONFIG_DIR $*" >>"{tmp}/gh-calls"
-echo {login}
-""")
-        (tmp / "gh").chmod(0o755)
-        (tmp / "state").mkdir(exist_ok=True)
-        (tmp / "state/bot-token").write_text("bot-secret\n")
-        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
-               "BOT_LOGIN": "loop-bot", "GITHUB_TOKEN": "owner-secret"}
-        env.pop("LOOP_AGENT", None)
-        return env
+    def app_server(self, tmp, reject=False):
+        """GitHub の API の代わり。App の JWT とインストールのトークンを確かめ、呼ばれた回数を数える。"""
+        calls = []
+        key = tmp / "app-key.pem"
+        subprocess.run(["openssl", "genrsa", "-out", key, "2048"], check=True, capture_output=True)
+        public = subprocess.run(["openssl", "rsa", "-in", key, "-pubout"], check=True, capture_output=True).stdout
+        (tmp / "app-pub.pem").write_bytes(public)
 
-    def test_the_loop_uses_the_bot_account_for_github_and_git(self):
-        # 人間の判断はオーナーの書き込みだけが認められるので、ループは別のアカウント(bot)で動く(docs/adr/0017)
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def reply(self, code, body):
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(body).encode())
+
+            def jwt_ok(self):
+                token = self.headers.get("Authorization", "").removeprefix("Bearer ")
+                head, payload, sig = token.split(".")
+                pad = lambda s: s + "=" * (-len(s) % 4)
+                (tmp / "sig").write_bytes(base64.urlsafe_b64decode(pad(sig)))
+                ok = subprocess.run(["openssl", "dgst", "-sha256", "-verify", tmp / "app-pub.pem", "-signature", tmp / "sig"],
+                                    input=f"{head}.{payload}".encode(), capture_output=True).returncode == 0
+                return ok and json.loads(base64.urlsafe_b64decode(pad(payload)))["iss"] == "123"
+
+            def do_GET(self):
+                calls.append(("GET", self.path))
+                if reject:
+                    return self.reply(401, {"message": "Bad credentials"})
+                if self.path == "/app" and self.jwt_ok():
+                    return self.reply(200, {"slug": "loop-app"})
+                if self.path == "/repos/o/r/installation" and self.jwt_ok():
+                    return self.reply(200, {"id": 7})
+                if self.path == "/users/loop-app%5Bbot%5D":
+                    return self.reply(200, {"id": 99})
+                self.reply(404, {})
+
+            def do_POST(self):
+                calls.append(("POST", self.path))
+                if self.path == "/app/installations/7/access_tokens" and self.jwt_ok():
+                    n = sum(1 for c in calls if c[0] == "POST")
+                    expires = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))
+                    return self.reply(201, {"token": f"ghs_{n}", "expires_at": expires})
+                self.reply(404, {})
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        env = {**os.environ, "LOOP_GITHUB_API": f"http://127.0.0.1:{server.server_address[1]}", "LOOP_APP_REPO": "o/r",
+               "LOOP_APP_ID": "123", "LOOP_APP_KEY_FILE": str(key), "STATE_DIR": str(tmp / "state"),
+               "GITHUB_TOKEN": "owner-secret", "GH_TOKEN": "owner-secret"}
+        env.pop("LOOP_AGENT", None)
+        return env, calls
+
+    def test_app_token_is_cached_until_it_is_about_to_expire(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            script = ('source "$1"; use_bot_account || exit $?; '
-                      'echo "$GH_TOKEN|${GITHUB_TOKEN:-}|$GIT_AUTHOR_NAME|$GIT_COMMITTER_EMAIL"; '
-                      'git config --get-all credential.https://github.com.helper | tail -n1; '
+            env, calls = self.app_server(tmp)
+            env["LOOP_APP_TOKEN_CACHE"] = str(tmp / "cache.json")
+            token = lambda: self.invoke("app_token.py", "token", **env).stdout.strip()
+            self.assertEqual([token(), token()], ["ghs_1", "ghs_1"])
+            cached = json.loads((tmp / "cache.json").read_text())
+            (tmp / "cache.json").write_text(json.dumps({**cached, "expires": int(time.time()) + 300}))
+            self.assertEqual(token(), "ghs_2")
+            self.assertEqual(oct((tmp / "cache.json").stat().st_mode & 0o777), "0o600")
+
+    def test_the_loop_uses_the_github_app_for_gh_git_and_commits(self):
+        # 人間の判断はオーナーの書き込みだけが認められるので、ループは GitHub App で動く(docs/adr/0017)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            env, calls = self.app_server(tmp)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "gh").write_text('#!/bin/sh\necho "real-gh $GH_TOKEN ${GITHUB_TOKEN:-} $GH_CONFIG_DIR $*"\n')
+            (bin_dir / "gh").chmod(0o755)
+            env["PATH"] = str(bin_dir) + os.pathsep + env["PATH"]
+            script = ('source "$1"; use_loop_app || exit $?; gh pr view 5; '
+                      'echo "$GIT_AUTHOR_NAME|$GIT_COMMITTER_EMAIL|${GH_TOKEN:-}"; '
                       'printf "protocol=https\nhost=github.com\n\n" | git credential fill')
-            result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh"], capture_output=True, text=True,
-                                    env=self.bot_env(tmp, "loop-bot"), timeout=60)
+            result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh"], capture_output=True, text=True, env=env, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = result.stdout.splitlines()
-            self.assertEqual(lines[0], "bot-secret||loop-bot|loop-bot@users.noreply.github.com")
-            self.assertIn("password=bot-secret", result.stdout)
-            self.assertIn(f"bot-secret {tmp}/state/gh-bot api user", (tmp / "gh-calls").read_text())
+            self.assertEqual(lines[0], f"real-gh ghs_1  {tmp}/state/gh-app pr view 5")
+            self.assertEqual(lines[1], "loop-app[bot]|99+loop-app[bot]@users.noreply.github.com|")
+            self.assertIn("password=ghs_1", result.stdout)
 
-    def test_the_loop_refuses_a_token_of_another_account(self):
-        for login, extra in [("KazutakaYamane", {}), ("someone", {}), ("KazutakaYamane", {"BOT_LOGIN": "KazutakaYamane"})]:
-            with self.subTest(login=login, extra=extra), tempfile.TemporaryDirectory() as tmp:
-                tmp = Path(tmp)
-                result = subprocess.run(["bash", "-c", 'source "$1"; use_bot_account', "test", HERE / "run.sh"],
-                                        capture_output=True, text=True, env={**self.bot_env(tmp, login), **extra}, timeout=60)
-                self.assertEqual(result.returncode, 78, result.stderr)
-
-    def test_decisions_are_refused_from_the_bot_account(self):
-        # 承認・回答・分け直しはオーナーのアカウント(メインのチャット)だけが書ける
+    def test_the_loop_does_not_start_without_a_working_app(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            env = self.bot_env(tmp, "loop-bot")
+            env, _ = self.app_server(tmp, reject=True)
+            for extra in ({"LOOP_APP_ID": ""}, {"LOOP_APP_KEY_FILE": str(tmp / "missing.pem")}, {}):
+                with self.subTest(extra=extra):
+                    result = subprocess.run(["bash", "-c", 'source "$1"; use_loop_app', "test", HERE / "run.sh"],
+                                            capture_output=True, text=True, env={**env, **extra}, timeout=60)
+                    self.assertEqual(result.returncode, 78, result.stderr)
+
+    def test_decisions_are_refused_from_the_loop_app(self):
+        # 承認・回答・分け直しはオーナーのアカウント(メインのチャット)だけが書ける。App のトークンでは /user を読めない
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "gh").write_text(f"""#!/bin/sh
+echo "$*" >>"{tmp}/gh-calls"
+case "$*" in "api user"*) echo "Resource not accessible by integration (HTTP 403)" >&2; exit 1 ;; esac
+""")
+            (tmp / "gh").chmod(0o755)
+            env = {**os.environ, "PATH": str(tmp) + os.pathsep + os.environ["PATH"], "STATE_DIR": str(tmp / "state")}
             for args in (["approve", "122"], ["answer", "122", "ok"], ["replan", "122", "x"]):
                 result = subprocess.run([HERE / "ctl.sh", *args], capture_output=True, text=True, env=env, timeout=60)
                 self.assertEqual(result.returncode, 1, (args, result.stdout, result.stderr))
-                self.assertIn("not as loop-bot", result.stderr)
+                self.assertIn("not a user", result.stderr)
             self.assertNotIn("comment", (tmp / "gh-calls").read_text())
 
     def test_hook_keeps_workers_from_rewriting_the_issue_body(self):

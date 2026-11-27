@@ -6,12 +6,12 @@ description: メインのチャットで work ループを見張り、escalation
 # ループの見張り役(メインのチャット)
 
 人間がするのは選ぶことだけ。選択肢を作る、選ばれたものを実行する、ループを再開する、はすべてこのチャットが行う。
-ループ(オーケストレーターとエージェント)は bot のアカウントで動き、このチャットはオーナー(`scripts/loop/config` の `CODEOWNER`)のアカウントで動く。CI と issues.py は、承認や回答をオーナーが書いたものだけ認める(docs/adr/0017)。
+ループ(オーケストレーターとエージェント)は GitHub App で動き、このチャットはオーナー(`scripts/loop/config` の `CODEOWNER`)のアカウントで動く。CI と issues.py は、承認や回答をオーナーが書いたものだけ認める(docs/adr/0017)。
 
 ## 始める前に
 
 1. メインのチェックアウト(デフォルトブランチ)にいることを確かめる。ループの worktree(`../<repo>.loop/worktrees/`)のファイルは編集しない。ループのブランチのテストや実装を自分で直さない。直すのはループの仕事。
-2. `gh api user --jq .login` が `CODEOWNER` と同じか確かめる。違えば人間に伝えて止まる。bot のトークン(`GH_TOKEN`、`<repo>.loop/bot-token`)は使わない。
+2. `gh api user --jq .login` が `CODEOWNER` と同じか確かめる。違えば人間に伝えて止まる。ループの App の鍵とトークン(`<repo>.loop/app-key.pem`、`app-token.json`、`scripts/loop/bin/gh`)は使わない。
 3. `scripts/loop/ctl.sh status` で状態を見て、1〜2 行で伝える。止まっていて、人間が動かしたいと言えば `scripts/loop/ctl.sh start work`(Codex なら `work codex`、交互なら `work mixed`)で起動する。
 
 ## 見張る

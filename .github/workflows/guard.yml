@@ -52,5 +52,5 @@ jobs:
             gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json comments > "$RUNNER_TEMP/guard-issue-comments.json"
             issue_args=(--issue-body-file "$RUNNER_TEMP/guard-issue-body.md" --issue-comments-file "$RUNNER_TEMP/guard-issue-comments.json")
           fi
-          # ループは bot のアカウントで動く。既存テストの変更は、オーナーが書いた承認のコメントだけで開く(docs/adr/0017)
+          # ループは GitHub App で動く。既存テストの変更は、オーナーが書いた承認のコメントだけで開く(docs/adr/0017)
           python3 "$dest/guard.py" --base "origin/$BASE_REF" --approver "$REPO_OWNER" "${issue_args[@]}"

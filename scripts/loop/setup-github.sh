@@ -20,7 +20,7 @@ label loop:escalated  b60205 "人間の判断が必要"
 label loop:canary     bfdadc "ハーネスの自己テスト PR。マージしない"
 
 # 必須チェックと CODEOWNERS のレビューを main に課す。
-# PR を開くのはループ(bot のアカウント)。保護パスを含む PR は、オーナー(CODEOWNER)の承認がないとマージできない。
+# PR を開くのはループ(GitHub App)。保護パスを含む PR は、オーナー(CODEOWNER)の承認がないとマージできない。
 python3 -I - "$REQUIRED_CHECKS" <<'PY' | gh api -X PUT "repos/$repo/branches/$DEFAULT_BRANCH/protection" --input - >/dev/null
 import json, sys
 print(json.dumps({
@@ -34,12 +34,18 @@ print(json.dumps({
 PY
 echo "branch protection: $DEFAULT_BRANCH requires $REQUIRED_CHECKS"
 
-# ループは bot のアカウントで GitHub を操作する(docs/adr/0017)。管理者にはしない(ブランチ保護をすり抜けさせない)
-if [ -n "${BOT_LOGIN:-}" ]; then
-  gh api -X PUT "repos/$repo/collaborators/$BOT_LOGIN" -f permission=push >/dev/null
-  echo "collaborator: $BOT_LOGIN (write)。招待を bot のアカウントで受け、その classic token(repo の権限)を BOT_TOKEN_FILE に置く"
+# ループは GitHub App で GitHub を操作する(docs/adr/0017)。App の作成とインストールはブラウザで行う
+if [ -n "${LOOP_APP_ID:-}" ]; then
+  key="${LOOP_APP_KEY_FILE:-$(dirname "$(git rev-parse --show-toplevel)")/$(basename "$(git rev-parse --show-toplevel)").loop/app-key.pem}"
+  LOOP_APP_KEY_FILE="$key" LOOP_APP_TOKEN_CACHE="" python3 -I "$LOOP_DIR/app_token.py" identity | sed -n 2p | sed 's/^/GitHub App: /'
 else
-  echo "scripts/loop/config の BOT_LOGIN を埋めて、もう一度実行してください(ループは bot のアカウントで動く)" >&2
+  cat >&2 <<'MD'
+ループ用の GitHub App を作ってください(Settings > Developer settings > GitHub Apps > New GitHub App):
+  - Webhook: 無効
+  - Repository permissions: Contents, Issues, Pull requests を Read and write、Checks, Commit statuses, Actions を Read-only
+  - 作ったら秘密鍵を生成して ../<repo>.loop/app-key.pem に置き、このリポジトリだけにインストールする
+  - App ID を scripts/loop/config の LOOP_APP_ID に入れて、もう一度実行する
+MD
 fi
 
 if [ -z "$(gh issue list --label loop:bootstrap --state all --json number --jq '.[0].number // empty')" ]; then

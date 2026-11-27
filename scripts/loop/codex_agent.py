@@ -58,7 +58,7 @@ def launch(action, target, prompt):
                              "-c", "sandbox_mode=" + json.dumps(sandbox),
                              "-c", "sandbox_workspace_write.network_access=true",
                              "-c", 'approval_policy="never"',
-                             # 既定では名前に TOKEN を含む変数がシェルに渡らない。ループは bot の GH_TOKEN で GitHub を操作する
+                             # 既定では名前に TOKEN を含む変数がシェルに渡らない。ループの gh は GitHub App のトークンを GH_TOKEN で渡す
                              "-c", "shell_environment_policy.ignore_default_excludes=true"]
     roots = []
     if mode == "canary-spec":

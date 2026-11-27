@@ -449,7 +449,7 @@ APPROVAL_MARK = "<!-- loop:test-change-approval -->"
 
 
 def approved_tests(comments: list[dict], approver: str) -> list[str]:
-    """承認者(リポジトリのオーナー)が書いた承認のコメントに並ぶパス。ループは bot のアカウントで動くので、
+    """承認者(リポジトリのオーナー)が書いた承認のコメントに並ぶパス。ループは GitHub App で動くので、
     ループが同じ形のコメントを書いても作者が違い、承認にならない(docs/adr/0017)。"""
     paths: list[str] = []
     for c in comments:

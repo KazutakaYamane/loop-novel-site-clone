@@ -44,7 +44,7 @@ case "${1:-}" in
   status) st status "$STATE_DIR" ;;
   watch) st watch "$STATE_DIR" ;;
   stop) st stop "$STATE_DIR" ;;
-  # ループのエージェントは呼べない(guard-hook.py が止め、bot のトークンでは issues.py が断る)
+  # ループのエージェントは呼べない(guard-hook.py が止め、ループの GitHub App のトークンでは issues.py が断る)
   escalations) (cd "$REPO_ROOT" && python3 -I "$LOOP_DIR/issues.py" escalations) ;;
   approve|answer|replan)
     cmd=$1; shift

@@ -14,7 +14,8 @@
 
 ## 決定
 
-- ループ(オーケストレーターとすべての iteration)は bot のアカウント(`scripts/loop/config` の `BOT_LOGIN`)で GitHub を操作する。`run.sh` は起動時に bot のトークンを `GH_TOKEN` にし、`GH_CONFIG_DIR` をオーナーの設定から切り離し、git の資格情報とコミットの作者も bot にする。トークンの持ち主が `BOT_LOGIN` でなければ起動しない。bot はリポジトリの write 権限だけを持ち、管理者にしない。
+- ループ(オーケストレーターとすべての iteration)は GitHub App(`scripts/loop/config` の `LOOP_APP_ID`)で GitHub を操作する。App はこのリポジトリだけにインストールし、Contents・Issues・Pull requests の書き込みと、Checks・Commit statuses・Actions の読み取りだけを持つ。
+- App のインストールのトークンは 1 時間で切れ、ループは何時間も動く。そこで `run.sh` は `scripts/loop/bin/gh` を PATH の先頭に置き、gh を呼ぶたびに `scripts/loop/app_token.py` がトークンを確かめ、残りが 10 分を切ったら秘密鍵で作り直す。git push も同じスクリプトを credential helper にして使う。署名は openssl で行い、依存を増やさない。`GH_CONFIG_DIR` をオーナーの設定から切り離し、コミットの作者も App(`<slug>[bot]`)にする。App を確かめられなければ起動しない。
 - オーナー(`CODEOWNER`)のアカウントで動くメインのチャットが、ループを見張る(`ctl.sh await`)。escalation が来たら、解決の選択肢を回答のツールで人間に出し、選ばれたものを `ctl.sh approve` / `answer` / `replan` で issue に書いてループを再開する(`.claude/skills/loop-operator`)。
 - 既存テストの変更は、実装役が escalation のコメントに申請の印(`<!-- loop:test-change-request -->`)とファイルの一覧を書いて求める。承認はオーナーが書いたコメントの印(`<!-- loop:test-change-approval -->`)とファイルの一覧で表す。CI の guard は、PR が閉じる issue のコメントのうち、作者がリポジトリのオーナーのものだけを読み、そこに並ぶテストケースのファイルの変更を認める。`arch()` のテスト、補助ファイル、検査の設定は承認の対象にしない。
 - オーケストレーターは同じ承認を `LOOP_APPROVED_TESTS` として hook に渡し、hook はそのファイルだけ編集を許す。
@@ -23,8 +24,9 @@
 
 ## 結果
 
-- 人間はチャットで選ぶだけで、既存テストの変更を含む escalation を解決できる。ループが自分で承認を作っても、作者が bot なので CI は認めない。
-- bot が出した PR を、オーナーが CODEOWNERS のレビューで承認できる。保護パスを含む PR を管理者としてマージする必要がなくなる。
-- 初期設定で bot のアカウントとトークンを用意する手間が増える。fine-grained token は他人の個人リポジトリに使えないので、classic token(`repo`)を使う。
+- 人間はチャットで選ぶだけで、既存テストの変更を含む escalation を解決できる。ループが自分で承認を作っても、作者が App なので CI は認めない。
+- App が出した PR を、オーナーが CODEOWNERS のレビューで承認できる。保護パスを含む PR を管理者としてマージする必要がなくなる。
+- 初期設定で GitHub App を作り、秘密鍵を置く手間が増える。別のアカウントは要らない。トークンは 1 時間で切れるので、漏れたときの被害は小さい。秘密鍵はループの状態のディレクトリ(リポジトリの外)に置く。
+- bot のアカウント(machine user)と classic token も検討した。準備は少ないが、トークンが長く使え、権限を `repo` 単位でしか絞れず、規約上 1 人 1 つまでの別アカウントが要るので採らなかった。
 - ループのエージェントはオーナーと同じ OS のユーザーで動くので、オーナーの資格情報を読む抜け道は hook が推測で止めるだけで、完全には塞げない。塞ぐには、ループを別の OS のユーザーかコンテナで動かす必要がある。
 - 承認されたテストの中で起きた意図しない弱体化は、CI では見つけられない。レビュー役が申請の内容と照らし、PR の差分に残る。

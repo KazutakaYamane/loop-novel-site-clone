@@ -53,10 +53,10 @@ def is_test_case_file(rel: str) -> bool:
     return False
 
 # 人間の判断はメインのチャットがオーナーのアカウントで書く(scripts/loop/ctl.sh)。ループのエージェントには書かせない。
-# 本当の防衛線は、CI の guard がコメントの作者を確かめること(ループは bot のアカウントで動く)
+# 本当の防衛線は、CI の guard がコメントの作者を確かめること(ループは GitHub App で動く)
 APPROVAL = re.compile(r"loop:(?:test-change-approval|human-answer)|\bctl\.sh[\"']?\s+(?:approve|answer|replan)\b"
                       r"|\bissues\.py[\"']?\s+(?:approve|answer|replan)\b", re.I)
-# ループは bot のトークン(GH_TOKEN)で動く。オーナーの認証に持ち替えさせない
+# ループは GitHub App のトークンで動く(scripts/loop/bin/gh)。オーナーの認証に持ち替えさせない
 OWNER_AUTH = re.compile(r"\bGH_TOKEN\s*=|\bGITHUB_TOKEN\s*=|\bunset\b[^;&|]*\b(?:GH_TOKEN|GH_CONFIG_DIR|GIT_CONFIG_\w+)"
                         r"|\bGH_CONFIG_DIR\s*=|\.config/gh\b|hosts\.yml|\bgh\s+auth\b|\benv\s+-u\b|\benv\s+-i\b"
                         r"|\.ssh/|\bGIT_SSH|\bsshCommand\b|credential\.helper|\bGIT_CONFIG_(?:COUNT|KEY|VALUE|GLOBAL|SYSTEM)", re.I)
@@ -73,7 +73,7 @@ def forbid_approval(text: str) -> None:
 
 def forbid_owner_auth(cmd: str) -> None:
     if OWNER_AUTH.search(cmd or ""):
-        deny("the loop runs with the bot's GitHub token; do not change or bypass it")
+        deny("the loop runs with its GitHub App token; do not change or bypass it")
 
 
 WRITE_VERBS = re.compile(
