@@ -31,3 +31,4 @@
 | [0023](0023-episode-submission-rate-limit.md) | 話の作成・編集の送信は、利用者ごとに 10 分間 30 回まで | 採用 |
 | [0024](0024-reader-publication-boundary.md) | 読者向けの作品と話は公開済みの話から決める | 採用 |
 | [0025](0025-reader-page-layout.md) | 読者向けの作品ページ・話ページ・見つからない画面の組み方 | 採用 |
+| [0026](0026-new-arrivals-and-publish-visibility.md) | トップの新着の並びと件数、公開の即時反映 | 採用 |
