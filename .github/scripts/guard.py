@@ -398,7 +398,7 @@ def check_special_cases(files: dict[str, FileDiff], head: str) -> list[str]:
 
 # 追加も変更も削除も認めない(検査の設定、ハーネス、規則、要件書、CI が書くもの)
 ANY_CHANGE = [
-    ".github/**", ".claude/**", ".codex/**", "scripts/loop/**", "AGENTS.md", "CLAUDE.md",
+    ".github/**", ".claude/**", ".codex/**", ".agents/**", "scripts/loop/**", "AGENTS.md", "CLAUDE.md",
     "docs/requirements.md", "docs/kakuyomu-reference.md", ".gitignore", "metrics/**",
     "backend/phpstan.neon", "backend/phpstan*.neon", "backend/phpstan.neon.dist", "**/*baseline*.neon",
     "**/eslint.config.*", "**/.eslintrc*", "eslint.config.*", ".eslintrc*",
@@ -445,6 +445,23 @@ def likely_files(issue_body: str) -> list[str]:
     return [x.group(1) for x in re.finditer(r"^\s*-\s+`?([^`\s]+)`?", m.group(1), flags=re.M)]
 
 
+APPROVAL_MARK = "<!-- loop:test-change-approval -->"
+
+
+def approved_tests(comments: list[dict], approver: str) -> list[str]:
+    """承認者(リポジトリのオーナー)が書いた承認のコメントに並ぶパス。ループは GitHub App で動くので、
+    ループが同じ形のコメントを書いても作者が違い、承認にならない(docs/adr/0018)。"""
+    paths: list[str] = []
+    for c in comments:
+        author = (c.get("author") or {}).get("login", "")
+        body = c.get("body") or ""
+        if not approver or author.lower() != approver.lower() or APPROVAL_MARK not in body:
+            continue
+        block = body.split(APPROVAL_MARK, 1)[1].lstrip("\n").split("\n\n", 1)[0]
+        paths += [m.group(1) for m in re.finditer(r"^\s*-\s+`?([^`\s:]+)`?", block, flags=re.M)]
+    return paths
+
+
 def declared_baseline(path: str, declared: list[str]) -> bool:
     """issue が変えると名指しした基準画像か。e2e/visual/** のような広い指定では名指しにならない。"""
     return SCREENSHOT.match(path) is not None and match(path, [d for d in declared if "__screenshots__/" in d])
@@ -461,7 +478,8 @@ def match(path: str, patterns: list[str]) -> bool:
     return False
 
 
-def check_protected(files: dict[str, FileDiff], base: str, declared: list[str] | None = None) -> list[str]:
+def check_protected(files: dict[str, FileDiff], base: str, declared: list[str] | None = None,
+                    approved: list[str] | None = None) -> list[str]:
     errors = []
     for path, fd in sorted(files.items()):
         base_text = show(base, path)
@@ -474,6 +492,9 @@ def check_protected(files: dict[str, FileDiff], base: str, declared: list[str] |
             errors.append(f"{path}: [Protected paths] check or harness configuration cannot be changed ({fd.status})")
         elif match(path, EXISTING) and existed:
             if untagged_test(path, base_text) or declared_baseline(path, declared or []):
+                continue
+            # 人間の承認はテストケースのファイルを 1 つずつ名指しする。補助ファイル、設定、arch() の規則は開かない
+            if is_test_case_file(path) and path in (approved or []):
                 continue
             errors.append(f"{path}: [Protected paths] existing file cannot be changed or deleted ({fd.status})")
     return errors
@@ -566,8 +587,13 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--base", required=True, help="base branch ref, e.g. origin/main")
     ap.add_argument("--head", default="HEAD")
     ap.add_argument("--issue-body-file", help="the body of the issue the PR closes")
+    ap.add_argument("--issue-comments-file", help="the comments of the issue the PR closes (JSON from gh issue view --json comments)")
+    ap.add_argument("--approver", default="", help="the GitHub login whose approval comments open existing tests")
     args = ap.parse_args(argv)
     declared = likely_files(Path(args.issue_body_file).read_text(encoding="utf-8")) if args.issue_body_file else []
+    comments = json.loads(Path(args.issue_comments_file).read_text(encoding="utf-8")).get("comments", []) \
+        if args.issue_comments_file else []
+    approved = approved_tests(comments, args.approver)
 
     files = pr_diff(args.base, args.head)
     errors: list[str] = []
@@ -575,7 +601,7 @@ def main(argv: list[str]) -> int:
     errors += check_special_cases(files, args.head)
 
     if show(args.base, ".github/CODEOWNERS") is not None:
-        errors += check_protected(files, args.base, declared)
+        errors += check_protected(files, args.base, declared, approved)
     else:
         print("guard: .github/CODEOWNERS is not on the base branch; protected paths are not checked (bootstrap)")
 

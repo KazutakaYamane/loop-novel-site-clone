@@ -16,6 +16,7 @@
   LOOP_REPO_ROOT    オーケストレーターが動いているメインのチェックアウト
   LOOP_WT_DIR       worktree を置くディレクトリ
   LOOP_DEFAULT_REF  既存かどうかの判定に使う ref(例: origin/main)
+  LOOP_APPROVED_TESTS  人間が承認した既存テストのパス(1 行に 1 つ。オーナーが issue に書いた承認のコメントから)
 """
 
 import fnmatch
@@ -30,7 +31,7 @@ from pathlib import Path
 HARD = ["scripts/loop/**", ".codex/**", "AGENTS.md", "CLAUDE.md", "docs/requirements.md",
         "docs/kakuyomu-reference.md", ".gitignore", ".github/ISSUE_TEMPLATE/**", "metrics/**"]
 # bootstrap では新規作成だけ許す。通常は編集させない
-PROTECTED = [".github/**", ".claude/**", "backend/phpstan.neon", "backend/phpstan-baseline.neon",
+PROTECTED = [".github/**", ".claude/**", ".agents/**", "backend/phpstan.neon", "backend/phpstan-baseline.neon",
              "backend/infection.json5", "backend/phpunit.xml", "frontend/stryker.config.*",
              "frontend/vitest.config.*", "**/tsconfig*.json", "tsconfig*.json", "**/eslint.config.*",
              "eslint.config.*", "**/.eslintrc*", "e2e/playwright.config.*"]
@@ -50,6 +51,30 @@ def is_test_case_file(rel: str) -> bool:
     if rel.startswith(("frontend/", "e2e/")):
         return re.search(r"\.(test|spec)\.[cm]?[jt]sx?$", rel.rsplit("/", 1)[-1]) is not None
     return False
+
+# 人間の判断はメインのチャットがオーナーのアカウントで書く(scripts/loop/ctl.sh)。ループのエージェントには書かせない。
+# 本当の防衛線は、CI の guard がコメントの作者を確かめること(ループは GitHub App で動く)
+APPROVAL = re.compile(r"loop:(?:test-change-approval|human-answer)|\bctl\.sh[\"']?\s+(?:approve|answer|replan)\b"
+                      r"|\bissues\.py[\"']?\s+(?:approve|answer|replan)\b", re.I)
+# ループは GitHub App のトークンで動く(scripts/loop/bin/gh)。オーナーの認証に持ち替えさせない
+OWNER_AUTH = re.compile(r"\bGH_TOKEN\s*=|\bGITHUB_TOKEN\s*=|\bunset\b[^;&|]*\b(?:GH_TOKEN|GH_CONFIG_DIR|GIT_CONFIG_\w+)"
+                        r"|\bGH_CONFIG_DIR\s*=|\.config/gh\b|hosts\.yml|\bgh\s+auth\b|\benv\s+-u\b|\benv\s+-i\b"
+                        r"|\.ssh/|\bGIT_SSH|\bsshCommand\b|credential\.helper|\bGIT_CONFIG_(?:COUNT|KEY|VALUE|GLOBAL|SYSTEM)", re.I)
+
+
+def approved_tests() -> set[str]:
+    return {l.strip() for l in os.environ.get("LOOP_APPROVED_TESTS", "").splitlines() if l.strip()}
+
+
+def forbid_approval(text: str) -> None:
+    if APPROVAL.search(text or ""):
+        deny("only the human decides escalations; the main chat records them with the owner's account (scripts/loop/ctl.sh)")
+
+
+def forbid_owner_auth(cmd: str) -> None:
+    if OWNER_AUTH.search(cmd or ""):
+        deny("the loop runs with its GitHub App token; do not change or bypass it")
+
 
 WRITE_VERBS = re.compile(
     r"(\bsed\b[^|;&]*\s-i|\bperl\b[^|;&]*\s-i|\bmv\b|\bcp\b|\brm\b|\btee\b|(?<![0-9&])>{1,2}(?!&)"
@@ -136,6 +161,8 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
     if match(rel, EXISTING_ONLY) and existing is not None and not bootstrap:
         if (is_test_case_file(rel) and not AC_TAG.search(existing)) or SCREENSHOT.match(rel):
             return
+        if is_test_case_file(rel) and rel in approved_tests():
+            return
         deny(f"{rel} exists on the default branch; changing it needs human approval")
     if match(rel, APPEND_ONLY) and existing is not None:
         if name == "Edit" and tool.get("old_string", "") not in tool.get("new_string", ""):
@@ -149,6 +176,8 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
 
 def check_bash(cmd: str) -> None:
     hide_canaries(cmd)
+    forbid_approval(cmd)
+    forbid_owner_auth(cmd)
     if os.environ.get("LOOP_LOCAL_REVIEW_FLOW") == "1" and re.search(r"\bgit\s+push\b|\bgh\s+pr\s+(?:create|edit|ready)\b", cmd):
         deny("the orchestrator publishes the branch after local review")
     # CI の guard は issue の Likely files に名指しされた基準画像だけ更新を認める。実装とレビューの役が自分で名指しできないようにする
@@ -182,6 +211,7 @@ def check_bash(cmd: str) -> None:
 
 
 def check_patch(patch: str, cwd: str) -> None:
+    forbid_approval(patch)
     root = toplevel(cwd)
     path = None
     additions_only = False
@@ -221,6 +251,7 @@ def main() -> None:
         sections = re.split(r"^\*\*\* (Add File|Delete File|Update File|Move to): ([^\n]+)\n?", patch, flags=re.M)
         if len(sections) == 1:
             deny("unrecognized patch format")
+        forbid_approval(patch)
         root = toplevel(cwd)
         for action, path, body in zip(sections[1::3], sections[2::3], sections[3::3]):
             check_path(path, cwd, {}, "Patch")
@@ -236,7 +267,9 @@ def main() -> None:
         check_bash(tool.get("command", ""))
     elif name in ("Read", "Grep", "Glob"):
         hide_canaries(json.dumps(tool, ensure_ascii=False))
+        forbid_owner_auth(json.dumps(tool, ensure_ascii=False))
     elif name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        forbid_approval(json.dumps({k: v for k, v in tool.items() if k != "file_path"}, ensure_ascii=False))
         path = tool.get("file_path") or tool.get("notebook_path")
         if path:
             check_path(path, cwd, tool, name)

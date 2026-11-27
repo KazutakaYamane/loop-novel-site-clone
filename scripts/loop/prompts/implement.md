@@ -14,7 +14,10 @@ For local test/lint/build commands (including the Red step), prefix the command 
 
 ${REVIEW_HANDOFF}
 
-To escalate, follow "Stopping and escalating": label the issue `loop:escalated` and comment with the four points.
+Existing tests the human approved for this issue (one per line, empty means none; only these may change, and only as the approved request describes):
+${LOOP_APPROVED_TESTS}
+
+To escalate, follow "Stopping and escalating": label the issue `loop:escalated` and comment with the four points. If you need to change existing tagged test case files, add the request block from AGENTS.md "Human decisions". Follow the owner's `loop:human-answer` comments on the issue.
 To replan, label the issue `loop:replan` and comment with the reason and what you learned.
 
 End your final message with exactly one line:

@@ -40,6 +40,30 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
   CANARY_ARBITER_AFTER DEFAULT_BRANCH LOOP_CANARY_DIR
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
+
+# ループの GitHub の操作(gh、git push、コミットの作者)を GitHub App にする。人間の判断はオーナーの
+# アカウントの書き込みだけが認められるので、ループが自分で承認を作れない(docs/adr/0018)
+use_loop_app() {
+  local identity real_gh
+  LOOP_APP_KEY_FILE="${LOOP_APP_KEY_FILE:-$STATE_DIR/app-key.pem}"
+  if [ -z "${LOOP_APP_ID:-}" ]; then log "set LOOP_APP_ID in scripts/loop/config (the loop's GitHub App)"; return 78; fi
+  if [ ! -s "$LOOP_APP_KEY_FILE" ]; then log "missing the GitHub App's private key: $LOOP_APP_KEY_FILE"; return 78; fi
+  real_gh="$(type -ap gh | grep -vxF "$LOOP_DIR/bin/gh" | head -n1)"
+  if [ -z "$real_gh" ]; then log "missing CLI: gh"; return 69; fi
+  export LOOP_APP_ID LOOP_APP_KEY_FILE LOOP_REAL_GH="$real_gh" LOOP_APP_TOKEN_CACHE="$STATE_DIR/app-token.json"
+  # オーナーの gh の設定(~/.config/gh)と、手元にあるトークンを使わせない
+  export GH_CONFIG_DIR="$STATE_DIR/gh-app" PATH="$LOOP_DIR/bin:$PATH"
+  mkdir -p "$GH_CONFIG_DIR"
+  unset GH_TOKEN GITHUB_TOKEN
+  identity="$(py "$LOOP_DIR/app_token.py" identity)" || { log "GitHub rejected the App (LOOP_APP_ID=$LOOP_APP_ID)"; return 78; }
+  GIT_AUTHOR_NAME="$(sed -n 2p <<<"$identity")"
+  GIT_AUTHOR_EMAIL="$(sed -n 3p <<<"$identity")"
+  export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+  # git push もオーナーの資格情報ではなく App のトークンで行う。空の helper で既存の設定を打ち消してから足す
+  export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0= \
+    GIT_CONFIG_KEY_1=credential.https://github.com.helper GIT_CONFIG_VALUE_1="!python3 -I $LOOP_DIR/app_token.py credential"
+  log "GitHub account: $GIT_AUTHOR_NAME"
+}
 py() { python3 -I "$@"; }
 monotonic_ms() { py -c 'import time; print(time.monotonic_ns() // 1_000_000)'; }
 # 状態を <STATE_DIR>/status/ に書き、Orca があればワークスペースの表示にも出す。$1 step $2 詳細
@@ -702,6 +726,9 @@ run_issue() (
   trap 'rm -rf -- "$handoff"' EXIT
   export ISSUE=$n BRANCH=$branch WORKTREE=$wt PR_BODY="$handoff/pr.md" STATUS_KEY="issue-$n"
   export CI_HISTORY="$STATE_DIR/issue-$n-ci-history"
+  # オーナーが issue のコメントで承認した既存テスト。hook はこれだけ編集を許す(docs/adr/0018)
+  LOOP_APPROVED_TESTS="$(py "$LOOP_DIR/issues.py" approved "$n")" || { escalate_issue "$n" "could not read the approvals on the issue"; return; }
+  export LOOP_APPROVED_TESTS
   touch "$CI_HISTORY"
   attempt=$(($(grep -c '^Attempt ' "$CI_HISTORY" || true) + 1))
   while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
@@ -822,6 +849,10 @@ trap 'rc=$?; py "$LOOP_DIR/loop_status.py" finish "$STATE_DIR" "$rc" || true' EX
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap 'exit 129' HUP
+
+case "${1:-}" in
+  bootstrap|plan|work|all) use_loop_app || exit $? ;;
+esac
 
 case "${1:-}" in
   bootstrap) cmd_bootstrap ;;

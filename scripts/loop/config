@@ -43,8 +43,15 @@ CANARY_TIMEOUT_SECONDS=5400
 DEFAULT_BRANCH=main
 # ブランチ保護で必須にする CI のジョブ名。bootstrap はこの名前どおりにジョブを作る
 REQUIRED_CHECKS="backend frontend e2e mutation visual ac-coverage guard"
-# CODEOWNERS に書く GitHub のユーザー名(初期設定で埋める)
+# CODEOWNERS に書く GitHub のユーザー名(初期設定で埋める)。人間の判断(承認・回答)はこのアカウントの書き込みだけを認める。
+# メインのチャットはこのアカウントの gh で動く
 CODEOWNER=KazutakaYamane
+# ループ(オーケストレーターとエージェント)が GitHub を操作する GitHub App(初期設定で作る。docs/adr/0018)。
+# 権限は Contents・Issues・Pull requests を read and write、Checks・Commit statuses・Actions を read。このリポジトリだけにインストールする。
+# Workflows の権限は付けない(ループの push が .github/workflows/ を変えられないようにする)。
+# 秘密鍵は LOOP_APP_KEY_FILE(空なら <STATE_DIR>/app-key.pem)に置く
+LOOP_APP_ID=${LOOP_APP_ID:-5946117}
+LOOP_APP_KEY_FILE=${LOOP_APP_KEY_FILE:-}
 
 # サブスクリプションの利用上限(5時間枠・週の枠)に当たったときの扱い。
 # 上限が明けるまで待ってから、同じセッションを resume する。人間の判断待ちにはしない
