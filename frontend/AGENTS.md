@@ -28,3 +28,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 見た目の比較は、その issue で確定する要素を `expect(locator).toHaveScreenshot()` で要素単位で撮る。実行ごとに中身が変わる領域(一覧、ユーザー名、時刻)は `mask` で隠す。既存の基準画像は、issue の "Likely files" に `__screenshots__/` の中のパスで名指しされたものだけ撮り直してよい。それ以外は変えず、自分が足した部分の基準画像を新しいテストで足す(docs/adr/0016)。
 - ヘッダーの右側の操作(ログインの導線、ログイン中の表示)は `SiteHeader` の `data-testid="header-actions"` の領域に置く。
 - ブラウザから Laravel を呼ぶときは同じオリジンの `/api/*` を使い(`proxy.ts` が転送する)、更新の操作の前に `GET /api/csrf-token` のトークンを `X-CSRF-TOKEN` に付ける(`lib/auth/startDemo.ts`)。ログイン状態の cookie を JavaScript で読み書きしない(docs/adr/0015)。
+- デモログインは送信元の IP ごとに 1 時間 10 回までに制限される(docs/adr/0017)。デモログインする E2E と見た目の比較は、`@playwright/test` ではなく `e2e/support/clientAddress.ts` の `test` と `expect` を使い、テストごとに別の利用者の IP から開く。1 つのテストで別の利用者が要るときは `newClient()` と `uniqueClientAddress()` を使う。
+- 本物の上限に当てるのは `@AC-F2-7` の E2E だけにする。上限の案内などの見た目を撮るときは、`page.route` でデモログインの API に 429 を返させ、送信元の回数を使わない。
+- 手元では E2E と見た目の比較を `scripts/e2e.sh` で動かす(先に Laravel のキャッシュの回数を消す)。`docker compose run --rm e2e npx playwright test` を同じ worktree で繰り返すと、IP を分けない既存のテストが上限に当たる。
+- ブラウザが送った `X-User-IP` は `proxy.ts` が捨て、`lib/clientIp/` が決めた利用者の IP に置き換える。Laravel を呼ぶ経路を足すときも、利用者の IP をブラウザのヘッダーから直接取らない(docs/adr/0017)。

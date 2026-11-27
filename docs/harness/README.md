@@ -279,6 +279,7 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 | `.github/workflows/`、`CODEOWNERS`、PR の書式 | CI と保護の設定 | 土台作り役 |
 | `.github/scripts/` | guard、ac-coverage、mutation と visual の対象の判定、metrics を作るスクリプトとその試験 | 土台作り役 |
 | `scripts/worktree-setup.sh`、`scripts/worktree-teardown.sh` | worktree ごとの Docker 環境(プロジェクト名とポート)を作る・消す。CI の e2e と visual も使う | 土台作り役 |
+| `scripts/e2e.sh` | 手元で E2E と見た目の比較を動かす。先に Laravel のキャッシュ(デモログインの IP ごとの回数)を消す。CI は使わない([docs/adr/0017](../adr/0017-client-ip-and-demo-login-rate-limit.md)) | エージェント(#132) |
 | `backend/`、`frontend/` の初期状態 | Laravel と Next.js の骨組み | 人間(生成コマンドをそのまま実行) |
 | `backend/`、`frontend/`、`e2e/` | アプリとテスト | エージェント |
 | `docs/adr/` | 設計判断の記録 | エージェント |

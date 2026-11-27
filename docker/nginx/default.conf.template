@@ -2,7 +2,7 @@
 # Nginx 設定テンプレート: Laravel JSON API の前段
 # - UI は Next.js(別 ECS サービス)が描画するため、本 Nginx は JSON API のみを返す
 # - Next.js のサーバーが Service Connect 経由で 8080 だけを呼ぶ。ブラウザからは届かない
-# - 8080 には SG で Next.js タスクからしか届かないため、X-User-IP をそのまま信頼する
+# - 8080 には SG で Next.js タスクからしか届かない。X-User-IP は内部のネットワークの接続元からだけ信頼する(docs/adr/0017)
 # - ECS のコンテナヘルスチェックが叩く /health は静的に 200 を返す(DBに依存させない)
 #
 # テンプレート機構: nginx 公式イメージの entrypoint が起動時に
@@ -19,11 +19,23 @@ upstream php_fpm {
     keepalive 16;
 }
 
-# SSR はユーザーの IP を X-User-IP に入れて呼ぶ。ISR の生成など特定のユーザーに
-# 紐づかない呼び出しにはこのヘッダーがないため、接続元(Next.js 側)を使う
-map $http_x_user_ip $client_ip {
-    ""      $remote_addr;
-    default $http_x_user_ip;
+# Next.js(proxy.ts)は利用者の IP を X-User-IP に入れて呼ぶ。ISR の生成など特定のユーザーに
+# 紐づかない呼び出しにはこのヘッダーがないため、接続元(Next.js 側)を使う。
+# X-User-IP を信じるのは、Next.js がいる内部のネットワーク(プライベートアドレスとループバック)からの接続だけにする。
+# 外から 8080 に直接届いた接続のヘッダーは、利用者が自由に書けるので無視する(docs/adr/0017)
+geo $remote_addr $from_internal_network {
+    default        0;
+    127.0.0.0/8    1;
+    10.0.0.0/8     1;
+    172.16.0.0/12  1;
+    192.168.0.0/16 1;
+    ::1/128        1;
+    fc00::/7       1;
+}
+
+map "$from_internal_network:$http_x_user_ip" $client_ip {
+    "~^1:(?<forwarded_ip>[0-9A-Fa-f.:]+)$" $forwarded_ip;
+    default                                 $remote_addr;
 }
 
 server {
