@@ -57,9 +57,17 @@ test("the demo reader button on the login page logs in", { tag: "@AC-F1-5" }, as
 test("the demo author button on the login page logs in", { tag: "@AC-F1-5" }, async ({ page }) => {
   await page.goto("/login");
 
-  await page.getByRole("main").getByRole("button", { name: "デモ作者として始める" }).click();
+  // ログインの完了前に /api/user を送ると、ゲストの応答の cookie がログイン後のセッションを上書きするので、先に応答を待つ
+  const [login] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === "/api/demo-sessions",
+    ),
+    page.getByRole("main").getByRole("button", { name: "デモ作者として始める" }).click(),
+  ]);
 
-  await expect.poll(() => currentUserStatus(page)).toBe(200);
+  expect(login.status()).toBe(201);
+  expect(await currentUserStatus(page)).toBe(200);
   const user = await page.request.get("/api/user", { headers: { Accept: "application/json" } });
   expect((await user.json()).name).toMatch(/^デモ作者/);
 });
