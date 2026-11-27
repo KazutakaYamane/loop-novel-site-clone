@@ -80,6 +80,26 @@ def overlaps(a: list[str], b: list[str]) -> list[tuple[str, str]]:
     return hits
 
 
+# どの機能も自分の分を足すだけのファイル。並列の PR が同時に触っても、オーケストレーターが main を取り込むときに
+# iteration が両方を残して解ける。ここが重なりに数えられると、ほぼすべての issue が一列に並び、1 件の escalation で全体が止まる
+SHARED_ADDITIVE = ["docs/adr/**", "README.md", "docs/harness/**", "backend/AGENTS.md", "frontend/AGENTS.md",
+                   "backend/routes/api.php", "docs/kakuyomu-reference/**",
+                   # migration は issue ごとに日時つきの新しいファイルを足すだけ(既存の変更は人間の承認が要る)
+                   "backend/database/migrations/**"]
+
+
+def shared_additive(pattern: str) -> bool:
+    for s in SHARED_ADDITIVE:
+        if pattern == s or (s.endswith("/**") and prefix(pattern).startswith(s[:-2])):
+            return True
+    return False
+
+
+def conflicts(a: list[str], b: list[str]) -> list[tuple[str, str]]:
+    """同じソースのファイルを触りそうな組。足すだけの共有ファイルは数えない。"""
+    return overlaps([x for x in a if not shared_additive(x)], [y for y in b if not shared_additive(y)])
+
+
 def requirement_ids() -> list[str]:
     text = (REPO_ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     return re.findall(r"^- (AC-F\d+-\d+)", text, flags=re.M)
@@ -141,7 +161,7 @@ def validate() -> int:
     nums = sorted(open_)
     for idx, a in enumerate(nums):
         for b in nums[idx + 1:]:
-            hits = overlaps(likely_files(open_[a]), likely_files(open_[b]))
+            hits = conflicts(likely_files(open_[a]), likely_files(open_[b]))
             if hits and not (reachable(issues, a, b) or reachable(issues, b, a)):
                 sample = ", ".join(f"{x} ~ {y}" for x, y in hits[:3])
                 errors.append(f"#{a} and #{b}: likely files overlap ({sample}) but neither depends on the other")

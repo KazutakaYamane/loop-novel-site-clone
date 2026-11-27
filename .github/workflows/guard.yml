@@ -21,12 +21,19 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # PR が閉じる issue の "Likely files" を読む(名指しされた見た目の基準画像だけ変更を認める)
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       # 判定のスクリプトは base ブランチのものを使う(base にまだ無い bootstrap の PR だけ PR のもの)
       - name: Forbidden shortcuts, protected paths and dependencies
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --no-tags origin "$BASE_REF"
           dest="$RUNNER_TEMP/guard"
@@ -37,4 +44,10 @@ jobs:
             cp -R .github/scripts/. "$dest/"
           fi
           python3 -m unittest discover -s "$dest/tests" -p "test_*.py"
-          python3 "$dest/guard.py" --base "origin/$BASE_REF"
+          issue_args=()
+          issue="$(printf '%s\n' "$PR_BODY" | grep -ioE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' | head -n 1 | grep -oE '[0-9]+$' || true)"
+          if [ -n "$issue" ]; then
+            gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/guard-issue-body.md"
+            issue_args=(--issue-body-file "$RUNNER_TEMP/guard-issue-body.md")
+          fi
+          python3 "$dest/guard.py" --base "origin/$BASE_REF" "${issue_args[@]}"
