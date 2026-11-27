@@ -16,6 +16,6 @@ test("the public not-found message", async ({ page }) => {
   await page.goto("/works/0");
 
   const main = page.getByRole("main");
-  await expect(main.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
   await expect(main).toHaveScreenshot("public-not-found.png");
 });

@@ -5,6 +5,7 @@ import NotFound from "./not-found";
 test("explains a missing page and links back to the top", () => {
   render(<NotFound />);
 
-  expect(screen.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "トップへ戻る" })).toHaveAttribute("href", "/");
+  expect(screen.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
+  expect(screen.getByText(/このページは現在ご覧いただけません/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "トップへ" })).toHaveAttribute("href", "/");
 });

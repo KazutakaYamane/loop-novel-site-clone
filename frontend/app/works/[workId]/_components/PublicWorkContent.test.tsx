@@ -45,6 +45,18 @@ test("shows published work details and links to its published episodes", async (
   expect(fetchPublicWork).toHaveBeenCalledWith("4");
 });
 
+test("lists the serial status and genre in the details table", async () => {
+  vi.mocked(fetchPublicWork).mockResolvedValue(work);
+
+  render(await PublicWorkContent({ params }));
+
+  const details = screen.getByRole("region", { name: "詳細" });
+  const terms = within(details).getAllByRole("term").map((term) => term.textContent);
+  expect(terms).toEqual(["執筆状況", "ジャンル", "タグ", "セルフレイティング"]);
+  const statusValue = within(details).getByText("執筆状況").nextElementSibling;
+  expect(statusValue).toHaveTextContent("完結済");
+});
+
 test("omits empty optional details and shows the running status", async () => {
   vi.mocked(fetchPublicWork).mockResolvedValue({
     ...work,

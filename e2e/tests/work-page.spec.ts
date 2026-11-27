@@ -57,13 +57,13 @@ test("missing works and episodes and works without published episodes show not f
   const unpublished = new URL(page.url()).pathname.replace(/^\/my/, "");
 
   await page.goto(unpublished);
-  await expect(page.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
 
   const guest = await newClient(browser, baseURL, uniqueClientAddress());
   const guestPage = await guest.newPage();
   for (const path of [unpublished, "/works/0", `/works/${workId}/episodes/0`]) {
     await guestPage.goto(path);
-    await expect(guestPage.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+    await expect(guestPage.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
   }
   await guest.close();
 
@@ -73,7 +73,7 @@ test("missing works and episodes and works without published episodes show not f
   await otherPage.getByRole("main").getByRole("button", { name: "デモ読者として始める" }).click();
   await expect(otherPage.getByTestId("current-user")).toContainText("デモ読者");
   await otherPage.goto(unpublished);
-  await expect(otherPage.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+  await expect(otherPage.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
   await other.close();
 });
 
@@ -92,7 +92,7 @@ test("only the workspace shows the owner a draft, and no reader sees it", { tag:
 
   for (const reader of [page, guestPage, otherPage]) {
     await reader.goto(draftPath);
-    await expect(reader.getByRole("heading", { name: "ページが見つかりません" })).toBeVisible();
+    await expect(reader.getByRole("heading", { name: "お探しのページは見つかりませんでした" })).toBeVisible();
     await expect(reader.getByText("第2話 最初の便り")).toHaveCount(0);
   }
   await guest.close();
