@@ -38,6 +38,18 @@ PROTECTED = [".github/**", ".claude/**", "backend/phpstan.neon", "backend/phpsta
 EXISTING_ONLY = ["backend/tests/**", "frontend/**/*.test.*", "e2e/**", "docs/adr/*.md"]
 # 既存の行を消さない追記だけ許す
 APPEND_ONLY = ["backend/AGENTS.md", "frontend/AGENTS.md"]
+# CI の guard(.github/scripts/guard.py)と同じ判定。AC のタグを持たない既存のテストファイルは変えてよい
+AC_TAG = re.compile(r"AC-F\d+-\d+")
+# 見た目の基準画像は issue の Likely files に名指しされていれば変えてよい。issue を読むのは CI の guard に任せる
+SCREENSHOT = re.compile(r"^e2e/(?:.+/)?__screenshots__/.+\.png$")
+
+
+def is_test_case_file(rel: str) -> bool:
+    if rel.startswith("backend/tests/"):
+        return rel.endswith("Test.php") and not rel.startswith("backend/tests/Arch/")
+    if rel.startswith(("frontend/", "e2e/")):
+        return re.search(r"\.(test|spec)\.[cm]?[jt]sx?$", rel.rsplit("/", 1)[-1]) is not None
+    return False
 
 WRITE_VERBS = re.compile(
     r"(\bsed\b[^|;&]*\s-i|\bperl\b[^|;&]*\s-i|\bmv\b|\bcp\b|\brm\b|\btee\b|(?<![0-9&])>{1,2}(?!&)"
@@ -67,7 +79,8 @@ def toplevel(cwd: str) -> Path:
 
 def default_content(root: Path, rel: str) -> str | None:
     ref = os.environ.get("LOOP_DEFAULT_REF", "origin/main")
-    out = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{rel}"], capture_output=True, text=True)
+    # 基準画像などのバイナリも読むので、復号できないバイトは置き換える
+    out = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{rel}"], capture_output=True, text=True, errors="replace")
     return out.stdout if out.returncode == 0 else None
 
 
@@ -121,6 +134,8 @@ def check_path(path: str, cwd: str, tool: dict, name: str) -> None:
             return
         deny(f"{rel} is check or harness configuration")
     if match(rel, EXISTING_ONLY) and existing is not None and not bootstrap:
+        if (is_test_case_file(rel) and not AC_TAG.search(existing)) or SCREENSHOT.match(rel):
+            return
         deny(f"{rel} exists on the default branch; changing it needs human approval")
     if match(rel, APPEND_ONLY) and existing is not None:
         if name == "Edit" and tool.get("old_string", "") not in tool.get("new_string", ""):
@@ -136,6 +151,11 @@ def check_bash(cmd: str) -> None:
     hide_canaries(cmd)
     if os.environ.get("LOOP_LOCAL_REVIEW_FLOW") == "1" and re.search(r"\bgit\s+push\b|\bgh\s+pr\s+(?:create|edit|ready)\b", cmd):
         deny("the orchestrator publishes the branch after local review")
+    # CI の guard は issue の Likely files に名指しされた基準画像だけ更新を認める。実装とレビューの役が自分で名指しできないようにする
+    if os.environ.get("LOOP_LOCAL_REVIEW_FLOW") == "1" and (
+            re.search(r"\bgh\s+issue\s+edit\b[^;&|]*\s(?:--body\b|--body-file\b|-b\b|-F\b)", cmd)
+            or re.search(r"\bgh\s+api\b[^;&|]*\bissues/\d+\b(?![/\w])", cmd) and re.search(r"-X\s*PATCH|--method\s+PATCH|\s-[fF]\s*body=", cmd)):
+        deny("the implementation and review iterations do not edit the issue body; end with replan to change the split")
     if "novel-submission-site-clone" in cmd or re.search(r"(^|[\s/])novel-site-clone(/|\s|$)", cmd):
         deny("novel-site-clone and its Compose project belong to the human-reviewed repository")
     if re.search(r"\bgh\s+pr\s+merge\b", cmd):

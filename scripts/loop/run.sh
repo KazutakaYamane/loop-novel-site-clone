@@ -525,7 +525,7 @@ cmd_bootstrap() {
 
 # $1 planner のプロンプト(plan.md | replan.md), $2 ログ名
 plan_cycle() {
-  local tmpl=$1 name=$2 wt r v c feedback=""
+  local tmpl=$1 name=$2 wt r v c feedback="" validated=0
   git -C "$REPO_ROOT" fetch -q origin
   wt="$(ensure_plan_worktree)"
   for round in $(seq 1 "$MAX_PLAN_ROUNDS"); do
@@ -539,10 +539,12 @@ plan_cycle() {
       "RESULT: escalated"*) log "planner escalated: $r"; record_escalation "" agent "$name: $r"; return 1 ;;
       *) open_escalation "$name ended without a result" "round $round: $r (log: $(basename "$LAST_LOG"))"; return 1 ;;
     esac
+    validated=0
     if ! v="$(py "$LOOP_DIR/issues.py" validate)"; then
       feedback="$(printf 'scripts/loop/validate-plan.sh failed:\n%s' "$v")"
       continue
     fi
+    validated=1
     run_agent critic.md "$wt" "critic-r$round" "$MAX_COST_USD" normal
     record_metrics plan "$LAST_LOG" "$name-critic-r$round"
     c="$(result_of "$LAST_LOG")"
@@ -552,7 +554,14 @@ plan_cycle() {
       *) open_escalation "critic ended without a result" "round $round: $c (log: $(basename "$LAST_LOG"))"; return 1 ;;
     esac
   done
-  open_escalation "$name did not converge" "validator または critic を $MAX_PLAN_ROUNDS 回で通りませんでした。最後の指摘:
+  # 機械的な検証を通っていれば、critic の最後の指摘は issue のコメントに残したまま進める。
+  # 実装の iteration は issue のコメントを読み、分け方が本当に合わなければ replan で戻す(AGENTS.md「Planning」)
+  if [ "$validated" = 1 ]; then
+    log "$name: critic still requested changes after $MAX_PLAN_ROUNDS rounds; promoting the validated split"
+    py "$LOOP_DIR/issues.py" promote
+    return 0
+  fi
+  open_escalation "$name did not converge" "validator を $MAX_PLAN_ROUNDS 回で通りませんでした。最後の指摘:
 
 $feedback"
   return 1

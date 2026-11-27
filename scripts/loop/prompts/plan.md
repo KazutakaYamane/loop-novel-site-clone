@@ -10,7 +10,8 @@ ${FEEDBACK}
 3. Rules for the split:
    - Every AC ID in docs/requirements.md appears in exactly one issue.
    - Each issue fits in one PR, including its E2E tests.
-   - List dependencies by issue number. Issues whose "Likely files" overlap must depend on each other.
+   - List dependencies by issue number. Add one only when an issue builds on another issue's work, or when both are likely to edit the same source file. Files that every feature only adds to (`SHARED_ADDITIVE` in scripts/loop/issues.py: ADRs, README, docs/harness, the AGENTS.md files, `backend/routes/api.php`, new migrations, Kakuyomu notes) do not count. Do not chain issues just to order them: keep independent work parallel, so that one escalated issue does not stop the rest.
+   - When an issue will change what an existing screenshot baseline shows, name each baseline file it may update under "Likely files" with its full path under `e2e/visual/__screenshots__/` (a glob inside a `__screenshots__/` directory also works). CI lets a PR update only the baselines its issue names; a broad pattern such as `e2e/visual/**` does not count.
    - Order the work so that the shared foundations (data model, layout, notation engine) come before the features that use them.
 4. Run `scripts/loop/validate-plan.sh` and fix everything it reports before you finish.
 5. Write no code, open no PR, and never apply `loop:ready`.

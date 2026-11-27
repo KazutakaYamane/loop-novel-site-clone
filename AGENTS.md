@@ -58,21 +58,23 @@ After the bootstrap PR is merged, these exceptions end and every protected path 
 
 - After bootstrap, a planning iteration splits `docs/requirements.md` into issues from `.github/ISSUE_TEMPLATE/feature.md`, labeled `loop:planned`. It writes no code and never applies `loop:ready`.
 - Each issue fits in one PR and lists the acceptance criteria IDs it covers, the issues it depends on, and the files it is likely to touch. Every ID in `docs/requirements.md` is covered by exactly one issue. No issue covers more IDs than `MAX_AC_PER_ISSUE` in `scripts/loop/config`.
-- Issues that are likely to edit the same files must depend on each other rather than run in parallel.
-- No human reviews the split. The orchestrator first runs `scripts/loop/validate-plan.sh`, which checks the rules above mechanically. Then a critic iteration in a fresh session compares the split with `docs/requirements.md` and comments on the issues it finds wrong. The planner revises, and the cycle repeats up to `MAX_PLAN_ROUNDS` in `scripts/loop/config`. When both pass, the orchestrator relabels the issues `loop:ready`. When the limit is reached, the planner escalates.
+- Issues that are likely to edit the same source files must depend on each other rather than run in parallel. Files that every feature only adds to (`SHARED_ADDITIVE` in `scripts/loop/issues.py`: ADRs, `README.md`, `docs/harness/`, the `AGENTS.md` files, `backend/routes/api.php`, new migrations, Kakuyomu notes) do not count: the orchestrator merges the default branch into each branch, and the iteration resolves conflicts there by keeping both sides. Add no other dependency than these and one on an issue whose work this issue builds on, so that one escalated issue does not stop independent work.
+- When an issue will change what an existing visual baseline shows, its "Likely files" names each baseline it may update by its path inside `__screenshots__/` (see "Tests").
+- No human reviews the split. The orchestrator first runs `scripts/loop/validate-plan.sh`, which checks the rules above mechanically. Then a critic iteration in a fresh session compares the split with `docs/requirements.md` and comments on the issues it finds wrong. The planner revises, and the cycle repeats up to `MAX_PLAN_ROUNDS` in `scripts/loop/config`. When both pass, the orchestrator relabels the issues `loop:ready`. When the limit is reached and `validate-plan.sh` passes, the orchestrator relabels them `loop:ready` anyway and leaves the critic's last comments on the issues; implementation iterations read them and replan when the split is really wrong. Only when `validate-plan.sh` still fails at the limit does the orchestrator escalate.
 - Escalate to the human only when the requirements themselves are ambiguous or contradict each other, never for a problem in the split.
 
 ### Replanning
 
-- When an implementation iteration finds that its issue cannot fit in one PR, depends on an issue it does not list, or cannot be done without editing files another open `loop:*` issue is likely to edit, it does not escalate. It stops, leaves the branch as described under "Stopping and escalating", labels the issue `loop:replan`, and comments with the reason.
-- A replan iteration then edits, splits, or adds dependencies to the affected open issues. The result goes through the same validation as planning before it returns to `loop:ready`. A replan never moves an acceptance criteria ID into a closed issue.
+- When an implementation iteration finds that its issue cannot fit in one PR, depends on an issue it does not list, cannot be done without editing source files another open `loop:*` issue is likely to edit (shared additive files do not count, see "Planning"), or must update an existing visual baseline that its issue's "Likely files" does not name, it does not escalate. It stops, leaves the branch as described under "Stopping and escalating", labels the issue `loop:replan`, and comments with the reason.
+- A replan iteration then edits, splits, adds dependencies to, or removes unneeded dependencies from the affected open issues. The result goes through the same validation as planning before it returns to `loop:ready`. A replan never moves an acceptance criteria ID into a closed issue.
 
 ## Loop unit
 
 - One iteration implements exactly one issue labeled `loop:ready` whose dependencies are closed, and ends with one PR that closes it.
 - Work in the worktree and branch you were started in (`<issue number>-<slug>`). Do not create, switch, or delete branches or worktrees.
 - Before running anything, run `scripts/worktree-setup.sh`. It gives this worktree its own `COMPOSE_PROJECT_NAME`, ports, `.env`, dependencies, and database, so parallel iterations do not share state. Never point a worktree at another worktree's containers or database.
-- Touch only files that the issue requires. If the issue cannot be done without editing files another open `loop:*` issue is likely to edit, label it `loop:replan` instead of guessing (see "Replanning").
+- Touch only files that the issue requires. If the issue cannot be done without editing source files another open `loop:*` issue is likely to edit, label it `loop:replan` instead of guessing (see "Replanning").
+- Do not edit the body of your issue. Its "Likely files" decides which visual baselines CI lets you update; to change it, replan.
 
 ## Done means CI is green
 
@@ -104,6 +106,8 @@ After Red, Green, Refactor and local verification, the implementation worker com
   2. Green: write the least code that makes it pass.
   3. Refactor with the tests passing, then rerun them. Split modules that mix concerns, rename what no longer matches its contents, and delete code and exports the change left unused (an unused export in a `"use server"` file is a public endpoint).
 - You may add new test files and new test cases. An existing test is one in a file that exists on the default branch. Modifying or deleting an existing test requires human approval: the hook blocks it locally, and CODEOWNERS blocks the PR from merging. If you believe an existing test is wrong, do not work around it; escalate with the reason.
+- That protection covers the regression suite: test files that contain an acceptance criteria ID (`AC-F<n>-<m>`) anywhere on the default branch, `arch()` tests under `backend/tests/Arch/`, and test support files (helpers, fixtures, setup, configuration). A test case file (`backend/tests/**/*Test.php`, `frontend/**/*.test.*`, `frontend/**/*.spec.*`, `e2e/**/*.spec.*`, `e2e/**/*.test.*`) without any acceptance criteria ID is not part of it: you may change or delete it when the issue requires, for example to replace a placeholder test. Never move a test out of a tagged file to make it editable.
+- Existing visual baselines (`e2e/**/__screenshots__/**/*.png`) may be updated or deleted only when the issue's "Likely files" names them by a path inside `__screenshots__/`. The CI guard reads the issue that the PR closes. Update them with `--update-snapshots` in the `e2e` service, only for the change the issue asks for, and attach CI's diff images to the PR. For any other baseline, replan.
 - For a rule enforced by a mechanical check, the red step is a temporary violation that the check does not catch yet. Remove the violation after the check catches it.
 - A test double that implements an interface implements every method with the same behavior as the real implementation, backed by the double's in-memory state. Do not fill a method the test does not call with a fixed return value such as `return null`.
 - Every PR adds E2E tests for the acceptance criteria its issue covers, tagged with the IDs (`{ tag: "@AC-F2-7" }`), driving the app through the browser as a user would. When a criterion cannot be checked through the browser (CSRF, the 4:00 reset schedule), cover it with a backend or frontend test tagged the same way and say why in the PR. Once merged, they are existing tests: they become the regression suite, and changing them needs human approval like any other existing test.
@@ -114,7 +118,7 @@ After Red, Green, Refactor and local verification, the implementation worker com
 These make checks pass without making the code correct. The guard job and transcript audits look for them, and any one of them counts as a failed iteration:
 
 - Special-casing production code for test inputs, test names, or the test environment (`app()->runningUnitTests()`, `process.env.NODE_ENV === 'test'` branches that change behavior, hard-coded expected values).
-- Skipping or disabling tests: `->skip()`, `->todo()`, `test.skip`, `it.only`, `describe.skip`, `@group` exclusions, or removing tests from a suite.
+- Skipping or disabling tests: `->skip()`, `->todo()`, `test.skip`, `it.only`, `describe.skip`, `@group` exclusions, or removing tests from a suite (deleting an untagged test case file that the issue replaces is allowed; see "Tests").
 - Suppressing checks: `@phpstan-ignore*`, new PHPStan baseline entries, `eslint-disable*`, `@ts-ignore`, `@ts-expect-error`, `any` added to silence the type checker.
 - Weakening an assertion so that it passes.
 - Retrying or adding waits until a flaky test passes instead of fixing the cause. If a test is flaky for reasons outside the issue, escalate.
@@ -125,7 +129,7 @@ The only exception is a `loop:canary` PR during bootstrap, which contains exactl
 
 Do not modify these. The hook (`scripts/loop/guard-hook.py`) blocks edits, and CODEOWNERS requires human approval for any PR that touches them. The bootstrap iteration is the only exception (see "Bootstrap"):
 
-- existing test files under `backend/tests/`, `frontend/**/*.test.*`, `e2e/`
+- existing test files under `backend/tests/`, `frontend/**/*.test.*`, `e2e/`, except the untagged test case files and the visual baselines named in the issue that "Tests" allows
 - check configuration: `backend/phpstan.neon`, PHPStan baseline, ESLint config, `tsconfig*.json`, `backend/infection.json5`, `frontend/stryker.config.*`, coverage and visual-regression settings
 - `.github/`, `.claude/`, `.codex/`, `scripts/loop/`, `AGENTS.md`, `CLAUDE.md`
 - existing rules in `backend/AGENTS.md` and `frontend/AGENTS.md` (creating them and adding new rules is allowed)
