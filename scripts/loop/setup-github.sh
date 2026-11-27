@@ -37,7 +37,7 @@ echo "branch protection: $DEFAULT_BRANCH requires $REQUIRED_CHECKS"
 # ループは GitHub App で GitHub を操作する(docs/adr/0017)。App の作成とインストールはブラウザで行う
 if [ -n "${LOOP_APP_ID:-}" ]; then
   key="${LOOP_APP_KEY_FILE:-$(dirname "$(git rev-parse --show-toplevel)")/$(basename "$(git rev-parse --show-toplevel)").loop/app-key.pem}"
-  LOOP_APP_KEY_FILE="$key" LOOP_APP_TOKEN_CACHE="" python3 -I "$LOOP_DIR/app_token.py" identity | sed -n 2p | sed 's/^/GitHub App: /'
+  LOOP_APP_ID="$LOOP_APP_ID" LOOP_APP_KEY_FILE="$key" LOOP_APP_TOKEN_CACHE="" python3 -I "$LOOP_DIR/app_token.py" identity | sed -n 2p | sed 's/^/GitHub App: /'
 else
   cat >&2 <<'MD'
 ループ用の GitHub App を作ってください(Settings > Developer settings > GitHub Apps > New GitHub App):
