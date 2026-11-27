@@ -43,8 +43,15 @@ CANARY_TIMEOUT_SECONDS=5400
 DEFAULT_BRANCH=main
 # ブランチ保護で必須にする CI のジョブ名。bootstrap はこの名前どおりにジョブを作る
 REQUIRED_CHECKS="backend frontend e2e mutation visual ac-coverage guard"
-# CODEOWNERS に書く GitHub のユーザー名(初期設定で埋める)
+# CODEOWNERS に書く GitHub のユーザー名(初期設定で埋める)。人間の判断(承認・回答)はこのアカウントの書き込みだけを認める。
+# メインのチャットはこのアカウントの gh で動く
 CODEOWNER=KazutakaYamane
+# ループ(オーケストレーターとエージェント)が GitHub を操作する bot のアカウント(初期設定で埋める)。CODEOWNER とは別にする。
+# リポジトリに write 権限で招待し、classic token(repo の権限。fine-grained token は他人の個人リポジトリに使えない)を BOT_TOKEN_FILE(空なら <STATE_DIR>/bot-token)に置く(docs/adr/0017)
+BOT_LOGIN=${BOT_LOGIN:-}
+BOT_TOKEN_FILE=${BOT_TOKEN_FILE:-}
+# コミットの作者のメールアドレス。空なら <BOT_LOGIN>@users.noreply.github.com
+BOT_GIT_EMAIL=${BOT_GIT_EMAIL:-}
 
 # サブスクリプションの利用上限(5時間枠・週の枠)に当たったときの扱い。
 # 上限が明けるまで待ってから、同じセッションを resume する。人間の判断待ちにはしない

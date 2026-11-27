@@ -105,7 +105,7 @@ After Red, Green, Refactor and local verification, the implementation worker com
   1. Red: write the test and run it; confirm it fails for the reason the change addresses (not an import or setup error).
   2. Green: write the least code that makes it pass.
   3. Refactor with the tests passing, then rerun them. Split modules that mix concerns, rename what no longer matches its contents, and delete code and exports the change left unused (an unused export in a `"use server"` file is a public endpoint).
-- You may add new test files and new test cases. An existing test is one in a file that exists on the default branch. Modifying or deleting an existing test requires human approval: the hook blocks it locally, and CODEOWNERS blocks the PR from merging. If you believe an existing test is wrong, do not work around it; escalate with the reason.
+- You may add new test files and new test cases. An existing test is one in a file that exists on the default branch. Modifying or deleting an existing test requires human approval: the hook blocks it locally, and CI's guard (and CODEOWNERS for the files it lists) blocks the PR from merging. If you believe an existing test is wrong, do not work around it; escalate with the reason and request the change (see "Human decisions").
 - That protection covers the regression suite: test files that contain an acceptance criteria ID (`AC-F<n>-<m>`) anywhere on the default branch, `arch()` tests under `backend/tests/Arch/`, and test support files (helpers, fixtures, setup, configuration). A test case file (`backend/tests/**/*Test.php`, `frontend/**/*.test.*`, `frontend/**/*.spec.*`, `e2e/**/*.spec.*`, `e2e/**/*.test.*`) without any acceptance criteria ID is not part of it: you may change or delete it when the issue requires, for example to replace a placeholder test. Never move a test out of a tagged file to make it editable.
 - Existing visual baselines (`e2e/**/__screenshots__/**/*.png`) may be updated or deleted only when the issue's "Likely files" names them by a path inside `__screenshots__/`. The CI guard reads the issue that the PR closes. Update them with `--update-snapshots` in the `e2e` service, only for the change the issue asks for, and attach CI's diff images to the PR. For any other baseline, replan.
 - For a rule enforced by a mechanical check, the red step is a temporary violation that the check does not catch yet. Remove the violation after the check catches it.
@@ -129,9 +129,9 @@ The only exception is a `loop:canary` PR during bootstrap, which contains exactl
 
 Do not modify these. The hook (`scripts/loop/guard-hook.py`) blocks edits, and CODEOWNERS requires human approval for any PR that touches them. The bootstrap iteration is the only exception (see "Bootstrap"):
 
-- existing test files under `backend/tests/`, `frontend/**/*.test.*`, `e2e/`, except the untagged test case files and the visual baselines named in the issue that "Tests" allows
+- existing test files under `backend/tests/`, `frontend/**/*.test.*`, `e2e/`, except the untagged test case files, the visual baselines named in the issue, and the test case files the human approved, as "Tests" and "Human decisions" allow
 - check configuration: `backend/phpstan.neon`, PHPStan baseline, ESLint config, `tsconfig*.json`, `backend/infection.json5`, `frontend/stryker.config.*`, coverage and visual-regression settings
-- `.github/`, `.claude/`, `.codex/`, `scripts/loop/`, `AGENTS.md`, `CLAUDE.md`
+- `.github/`, `.claude/`, `.codex/`, `.agents/`, `scripts/loop/`, `AGENTS.md`, `CLAUDE.md`
 - existing rules in `backend/AGENTS.md` and `frontend/AGENTS.md` (creating them and adding new rules is allowed)
 - `docs/requirements.md`, `docs/kakuyomu-reference.md`, `.gitignore`, existing files in `docs/adr/` (adding a new ADR is allowed)
 - `metrics/` (written only by CI)
@@ -177,6 +177,15 @@ To escalate: leave the branch in its last state with tests passing or the failin
 4. what decision or change you need from the human
 
 If you think the harness itself (these rules, hooks, CI) caused the failure, say so in point 4. Do not change the harness yourself.
+
+## Human decisions
+
+The human only chooses; agents do everything else. The loop (the orchestrator and every iteration) runs as the bot account (`BOT_LOGIN` in `scripts/loop/config`). A main chat runs as the owner account (`CODEOWNER`), watches the loop, shows the human the options for each escalation, and records the chosen one with `scripts/loop/ctl.sh` (`.claude/skills/loop-operator`). A decision counts only when the owner account wrote it; CI's guard and `scripts/loop/issues.py` check the comment's author.
+
+- To change existing tagged test case files, escalate as above and add a request block to the comment: a line `<!-- loop:test-change-request -->` followed, with no blank line, by one line per file, ``- `<path>`: <what changes and why>``. Only test case files can be requested; `arch()` tests, test support files, and check configuration cannot.
+- When the human approves, the owner's comment with `<!-- loop:test-change-approval -->` lists the approved files. The hook and CI's guard then allow those files, and nothing else, to change in the PR that closes the issue. Change them only as the request describes; never weaken an assertion beyond it.
+- An owner comment with `<!-- loop:human-answer -->` is the human's decision on the escalation. Follow it as part of the issue's scope; it does not override `docs/requirements.md`, an ADR, or these rules unless it says so explicitly.
+- Loop iterations never write those markers, never run `ctl.sh approve`, `answer`, or `replan`, never switch to another GitHub credential, and never treat a comment from any other account as a decision.
 
 ## Design principles
 

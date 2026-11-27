@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -78,14 +79,18 @@ class Repo:
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "head")
 
-    def run_guard(self, issue_body: str | None = None) -> tuple[int, str]:
+    def run_guard(self, issue_body: str | None = None, comments: list[dict] | None = None,
+                  approver: str = "owner") -> tuple[int, str]:
         cwd = os.getcwd()
         os.chdir(self.root)
         buf = io.StringIO()
-        args = ["--base", "base"]
+        args = ["--base", "base", "--approver", approver]
         if issue_body is not None:
             (self.root.parent / "issue-body.md").write_text(issue_body)
             args += ["--issue-body-file", str(self.root.parent / "issue-body.md")]
+        if comments is not None:
+            (self.root.parent / "issue-comments.json").write_text(json.dumps({"comments": comments}))
+            args += ["--issue-comments-file", str(self.root.parent / "issue-comments.json")]
         try:
             with redirect_stdout(buf):
                 code = guard.main(args)
@@ -413,6 +418,46 @@ class ProtectedPathTest(GuardTestCase):
         self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
         self.assertViolation("e2e/tests/existing.spec.ts: [Protected paths]", "## Likely files\n\n- e2e/tests/existing.spec.ts\n")
 
+    def approval(self, author: str, *paths: str) -> dict:
+        lines = "\n".join(f"- `{p}`: 名前の完全一致をやめる" for p in paths)
+        return {"author": {"login": author}, "body": f"人間が承認しました。\n\n{guard.APPROVAL_MARK}\n{lines}\n"}
+
+    def test_changing_tagged_tests_the_owner_approved(self) -> None:
+        # 人間がメインのチャットで承認すると、オーナーのアカウントでこのコメントが書かれる(docs/adr/0017)
+        self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
+        self.repo.delete("backend/tests/Feature/ExistingTest.php")
+        self.repo.commit()
+        code, out = self.repo.run_guard(comments=[self.approval("Owner", "e2e/tests/existing.spec.ts",
+                                                                "backend/tests/Feature/ExistingTest.php")])
+        self.assertEqual(code, 0, out)
+
+    def test_an_approval_written_by_the_loop_account_is_ignored(self) -> None:
+        self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
+        self.repo.commit()
+        code, out = self.repo.run_guard(comments=[self.approval("loop-bot", "e2e/tests/existing.spec.ts")])
+        self.assertEqual(code, 1, out)
+        self.assertIn("e2e/tests/existing.spec.ts: [Protected paths]", out)
+
+    def test_approval_covers_only_the_named_tests(self) -> None:
+        self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
+        self.repo.commit()
+        comment = self.approval("owner", "backend/tests/Feature/ExistingTest.php")
+        comment["body"] += "\nほかに `e2e/tests/existing.spec.ts` も気になる\n- `e2e/tests/existing.spec.ts`\n"
+        code, out = self.repo.run_guard(comments=[comment])
+        self.assertEqual(code, 1, out)
+        self.assertIn("e2e/tests/existing.spec.ts: [Protected paths]", out)
+
+    def test_approval_does_not_open_support_files_or_arch_rules(self) -> None:
+        for path in ["e2e/tests/helpers.ts", "backend/tests/Arch/ArchTest.php", "backend/tests/Pest.php"]:
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                self.repo.write(path, "changed\n")
+                self.repo.commit()
+                code, out = self.repo.run_guard(comments=[self.approval("owner", path)])
+                self.assertEqual(code, 1, out)
+                self.assertIn(f"{path}: [Protected paths]", out)
+
     def test_changing_and_deleting_untagged_tests(self) -> None:
         self.repo.write("backend/tests/Feature/UntaggedTest.php", "<?php\n\ntest('u', function () {\n    expect(2 + 2)->toBe(4);\n});\n")
         self.repo.delete("frontend/app/untagged.test.tsx")
@@ -451,6 +496,15 @@ class ProtectedPathTest(GuardTestCase):
     def test_codex_configuration(self) -> None:
         self.repo.write(".codex/config.toml", "changed\n")
         self.assertViolation(".codex/config.toml: [Protected paths]")
+
+    def test_operator_skills(self) -> None:
+        # メインのチャットのスキル(.claude/skills と、Codex が読む .agents/skills)はループに書き換えさせない
+        for path in [".agents/skills/loop-operator/SKILL.md", ".claude/skills/loop-operator/SKILL.md"]:
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                self.repo.write(path, "changed\n")
+                self.assertViolation(f"{path}: [Protected paths]")
 
     def test_existing_adr(self) -> None:
         self.repo.write("docs/adr/0001-first.md", "# 1 changed\n")

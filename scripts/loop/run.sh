@@ -40,6 +40,30 @@ export REVIEW_LEVEL RATE_LIMIT_FALLBACK_WAIT_SECONDS REPO_ROOT LOOP_DIR REQUIRED
   CANARY_ARBITER_AFTER DEFAULT_BRANCH LOOP_CANARY_DIR
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >&2; }
+
+# ループの GitHub の操作(gh、git push、コミットの作者)を bot のアカウントにする。人間の判断はオーナーの
+# アカウントの書き込みだけが認められるので、ループが自分で承認を作れない(docs/adr/0017)
+use_bot_account() {
+  local file="${BOT_TOKEN_FILE:-$STATE_DIR/bot-token}" login email
+  if [ -z "${BOT_LOGIN:-}" ]; then log "set BOT_LOGIN in scripts/loop/config (the loop's GitHub account)"; return 78; fi
+  if [ "${BOT_LOGIN,,}" = "${CODEOWNER,,}" ]; then log "BOT_LOGIN must differ from CODEOWNER"; return 78; fi
+  if [ ! -s "$file" ]; then log "missing the bot's GitHub token: $file"; return 78; fi
+  GH_TOKEN="$(tr -d '[:space:]' <"$file")"
+  # オーナーの gh の設定(~/.config/gh)を読ませない
+  GH_CONFIG_DIR="$STATE_DIR/gh-bot"
+  mkdir -p "$GH_CONFIG_DIR"
+  export GH_TOKEN GH_CONFIG_DIR
+  unset GITHUB_TOKEN
+  login="$(gh api user --jq .login)" || { log "GitHub rejected the bot's token in $file"; return 78; }
+  if [ "${login,,}" != "${BOT_LOGIN,,}" ]; then log "the token in $file belongs to $login, not $BOT_LOGIN"; return 78; fi
+  email="${BOT_GIT_EMAIL:-$BOT_LOGIN@users.noreply.github.com}"
+  export GIT_AUTHOR_NAME="$BOT_LOGIN" GIT_COMMITTER_NAME="$BOT_LOGIN" GIT_AUTHOR_EMAIL="$email" GIT_COMMITTER_EMAIL="$email"
+  # git push もオーナーの資格情報ではなく bot のトークンで行う。空の helper で既存の設定を打ち消してから足す
+  export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.https://github.com.helper GIT_CONFIG_VALUE_0= \
+    GIT_CONFIG_KEY_1=credential.https://github.com.helper
+  export GIT_CONFIG_VALUE_1='!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f'
+  log "GitHub account: $login"
+}
 py() { python3 -I "$@"; }
 monotonic_ms() { py -c 'import time; print(time.monotonic_ns() // 1_000_000)'; }
 # 状態を <STATE_DIR>/status/ に書き、Orca があればワークスペースの表示にも出す。$1 step $2 詳細
@@ -702,6 +726,9 @@ run_issue() (
   trap 'rm -rf -- "$handoff"' EXIT
   export ISSUE=$n BRANCH=$branch WORKTREE=$wt PR_BODY="$handoff/pr.md" STATUS_KEY="issue-$n"
   export CI_HISTORY="$STATE_DIR/issue-$n-ci-history"
+  # オーナーが issue のコメントで承認した既存テスト。hook はこれだけ編集を許す(docs/adr/0017)
+  LOOP_APPROVED_TESTS="$(py "$LOOP_DIR/issues.py" approved "$n")" || { escalate_issue "$n" "could not read the approvals on the issue"; return; }
+  export LOOP_APPROVED_TESTS
   touch "$CI_HISTORY"
   attempt=$(($(grep -c '^Attempt ' "$CI_HISTORY" || true) + 1))
   while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
@@ -822,6 +849,10 @@ trap 'rc=$?; py "$LOOP_DIR/loop_status.py" finish "$STATE_DIR" "$rc" || true' EX
 trap 'exit 143' TERM
 trap 'exit 130' INT
 trap 'exit 129' HUP
+
+case "${1:-}" in
+  bootstrap|plan|work|all) use_bot_account || exit $? ;;
+esac
 
 case "${1:-}" in
   bootstrap) cmd_bootstrap ;;

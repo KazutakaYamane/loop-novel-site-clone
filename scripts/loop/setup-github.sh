@@ -20,7 +20,7 @@ label loop:escalated  b60205 "人間の判断が必要"
 label loop:canary     bfdadc "ハーネスの自己テスト PR。マージしない"
 
 # 必須チェックと CODEOWNERS のレビューを main に課す。
-# PR を開くのはループ(あなたの gh アカウント)なので、保護パスを含む PR は自分では承認できず、管理者としてマージする。
+# PR を開くのはループ(bot のアカウント)。保護パスを含む PR は、オーナー(CODEOWNER)の承認がないとマージできない。
 python3 -I - "$REQUIRED_CHECKS" <<'PY' | gh api -X PUT "repos/$repo/branches/$DEFAULT_BRANCH/protection" --input - >/dev/null
 import json, sys
 print(json.dumps({
@@ -33,6 +33,14 @@ print(json.dumps({
 }))
 PY
 echo "branch protection: $DEFAULT_BRANCH requires $REQUIRED_CHECKS"
+
+# ループは bot のアカウントで GitHub を操作する(docs/adr/0017)。管理者にはしない(ブランチ保護をすり抜けさせない)
+if [ -n "${BOT_LOGIN:-}" ]; then
+  gh api -X PUT "repos/$repo/collaborators/$BOT_LOGIN" -f permission=push >/dev/null
+  echo "collaborator: $BOT_LOGIN (write)。招待を bot のアカウントで受け、その classic token(repo の権限)を BOT_TOKEN_FILE に置く"
+else
+  echo "scripts/loop/config の BOT_LOGIN を埋めて、もう一度実行してください(ループは bot のアカウントで動く)" >&2
+fi
 
 if [ -z "$(gh issue list --label loop:bootstrap --state all --json number --jq '.[0].number // empty')" ]; then
   gh issue create --label loop:bootstrap --title "bootstrap: 土台と CI" --body "$(cat <<'MD'

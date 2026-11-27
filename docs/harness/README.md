@@ -245,14 +245,21 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 エージェントは次の場合に止まり、issue に `loop:escalated` を付けて、試したこと、失敗した検査とエラー、止まった理由、人間に決めてほしいことをコメントに書く。
 
 - 要件書の受け入れ条件があいまい、または互いに食い違う
-- 受け入れ条件のタグが付いた既存のテスト、`arch()` のテスト、テストの補助ファイルを変えないと進めない(タグの無いテストケースのファイルと、issue が名指しした基準画像は変えてよい)
+- 受け入れ条件のタグが付いた既存のテスト、`arch()` のテスト、テストの補助ファイルを変えないと進めない(タグの無いテストケースのファイルと、issue が名指しした基準画像は変えてよい)。タグ付きのテストケースのファイルなら、コメントに申請の印(`<!-- loop:test-change-request -->`)とファイルの一覧を書く
 - 既にあるテーブルや列を変える、または消すマイグレーションが要る
 - 許可リスト(`scripts/loop/dependencies.md`)にない依存が要る
 - 過去の設計判断(`docs/adr/`)と食い違う
 - カクヨムの画面で、承認が要る操作をしたい(`docs/kakuyomu-reference.md`)
 - 同じ検査が同じエラーで3回続けて落ちた、2回続けて変更がほとんど進まなかった、試行回数か費用の上限に達した
 
-人間は、コメントを読んで判断し、必要なら要件書や規則を直す。そのあと `loop:escalated` を外して `loop:ready` を付け直せば、次の実行で続きから再開する。作業途中のブランチは残っているので、エージェントはそこから続ける。
+人間はこれを GitHub で読まなくてよい。メインのチャット(オーナーのアカウントで動く Claude Code か Codex。`.claude/skills/loop-operator`)が見張り、解決の選択肢を回答のツールで出す。人間は選ぶだけでよい(docs/adr/0017)。
+
+1. メインのチャットは `scripts/loop/ctl.sh await` を裏で動かす。新しい escalation が出るか、ループが止まると呼び戻される。
+2. `scripts/loop/ctl.sh escalations` と issue のコメントを読み、止まった理由ごとに 2〜4 個の選択肢を作る(推奨を先頭に置く)。
+3. 選ばれたものを書く。既存テストの変更なら `ctl.sh approve <issue>`、解釈や再開の指示なら `ctl.sh answer <issue> "<内容>"`、分け直すなら `ctl.sh replan <issue> "<理由>"`。どれも `loop:escalated` を外し、`answer` と `approve` は `loop:ready` に戻す。
+4. ループが止まっていれば `ctl.sh start work` で起動し直す。作業途中のブランチは残っているので、エージェントはそこから続ける。
+
+承認と回答は、オーナーのアカウントが書いたコメント(`<!-- loop:test-change-approval -->`、`<!-- loop:human-answer -->` の印)だけが効く。ループは bot のアカウントで動くので、ループが同じ形のコメントを書いても、CI の guard と `issues.py` は無視する。`ctl.sh` の判断のコマンドも、オーナーのアカウントでなければ断る。
 
 ## ファイルの配置
 
@@ -264,7 +271,8 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 | `scripts/loop/config` | モデル、上限、並列数、必須の CI ジョブ名 | 人間 |
 | `scripts/loop/dependencies.md` | 依存の許可リスト | 人間 |
 | `scripts/loop/run.sh` | まとめ役 | 人間 |
-| `scripts/loop/ctl.sh`、`loop_status.py` | ループの起動・停止、状態の記録と表示、Orca のタブとワークスペースへの表示 | 人間 |
+| `scripts/loop/ctl.sh`、`loop_status.py` | ループの起動・停止、状態の記録と表示、Orca のタブとワークスペースへの表示、メインのチャットが使う escalation の一覧・待機・承認・回答・分け直し | 人間 |
+| `.claude/skills/loop-operator/`(Codex 向けに `.agents/skills/` からリンク) | メインのチャットがループを見張り、escalation の選択肢を出して実行する手順 | 人間 |
 | `scripts/loop/issues.py`、`validate-plan.sh` | 計画の検査、着手できる issue の判定 | 人間 |
 | `scripts/loop/canaries.py` | カナリアの仕様の検査と判定 | 人間 |
 | カナリアの仕様(`../loop-novel-site-clone.loop/canaries/`) | わざと規則を破る PR の一覧と、落ちるべき検査 | 仕様役。土台作りが終わると PR に公開される |
@@ -297,11 +305,12 @@ guard は、`.github/workflows/guard.yml`、`ci.yml`、`ac-coverage.yml` の3か
 ## 動かし方
 
 ```bash
-# 1. scripts/loop/config の CODEOWNER に自分の GitHub のユーザー名を入れる
+# 1. scripts/loop/config の CODEOWNER に自分の GitHub のユーザー名を、BOT_LOGIN にループ用の bot のアカウント名を入れる
+#    (bot は別の GitHub アカウント。classic token(repo の権限)を ../loop-novel-site-clone.loop/bot-token に置く)
 # 2. git の初期化、GitHub へ push
 git init -b main && git add -A && git commit -m "初期設定"
 gh repo create <名前> --private --source . --push
-# 3. ラベル、ブランチ保護、土台作りの issue を作る
+# 3. ラベル、ブランチ保護、bot の招待、土台作りの issue を作る(招待は bot のアカウントで受ける)
 scripts/loop/setup-github.sh
 # 4. 最初は土台作りだけを動かして、結果を確かめる
 scripts/loop/ctl.sh start bootstrap
@@ -386,7 +395,9 @@ Codex は実装・各レビューにつき1行を `<STATE_DIR>/metrics/<Issue番
 
 - **利用上限の検出**: 上限に当たったことは、Claude Code が出す `rate_limit_event` とエラーの文言から見分けている。偽の Claude Code を使った試験では動いたが、本物の上限に当たったときの出力では、まだ確かめていない。見分けられなかった場合は、従来どおりその issue が人間の判断待ちになる。
 - **費用の上限**: `MAX_COST_USD` は API に換算した額で、サブスクリプションで実際に払う額ではない。サブスクリプションのときにこの上限が効くかどうかは、まだ確かめていない。また、resume した実行の費用が、その回の分だけなのか、セッション全体の累計なのかも確かめていない。累計だった場合は、合計を多めに数えることになる(止まるのが早くなる方向なので、危険はない)。
-- **ブランチ保護**: 「承認は不要、ただし守るべきファイルを含むときは CODEOWNERS の承認が要る」という設定が、意図どおりに効くかはまだ確かめていない。また、PR を出すのは自分のアカウントなので、守るべきファイルを含む PR は自分では承認できず、管理者としてマージすることになる。
+- **ブランチ保護**: 「承認は不要、ただし守るべきファイルを含むときは CODEOWNERS の承認が要る」という設定が、意図どおりに効くかはまだ確かめていない。PR を出すのは bot のアカウントなので、守るべきファイルを含む PR はオーナーが承認できる(docs/adr/0017 より前は、同じアカウントで出していたので管理者としてマージしていた)。
+- **オーナーの資格情報**: ループのエージェントはオーナーと同じ OS のユーザーで動く。オーナーの gh の設定や SSH の鍵を読んで持ち替えることは、hook が文字列から推測して止めるだけで、完全には塞げない。塞ぐには、ループを別の OS のユーザーかコンテナで動かす。
+- **承認したテストの中身**: 承認されたテストの中で起きた意図しない弱体化は、CI では見つけられない。レビュー役が申請の内容と照らし、PR の差分に残る。
 - **並列実行**: ブランチ保護で「main に追いついていること」を求めているので、並列数を2以上にすると、先にマージされた変更に追いつけずにマージが失敗する。いまは並列数1で動かす前提。
 - **シェルの見張り**: 作業中の見張りは、シェルのコマンドについては文字列から推測しているだけで、抜け道がある。最後に止めるのは CI である。
 - **CODEOWNERS と既存のテスト**: CODEOWNERS は「既存のファイルだけ」を指定できない。テストのフォルダを丸ごと指定すると、テストを足すだけの PR まで人間の承認が要り、ループが止まる。そこで、土台作りの時点にあったテストの補助ファイル、`arch()` のテスト、ADR だけをファイルごとに書いている(タグの無いテストケースのファイルは変えてよいので書かない)。その後に足されたテストの書き換えは、CODEOWNERS ではなく guard ジョブだけが止める。

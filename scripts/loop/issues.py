@@ -6,6 +6,12 @@
   issues.py status            ラベルごとの件数を JSON で出す
   issues.py promote           検証を通った issue を loop:ready にする
   issues.py slug N            ブランチ名に使う slug を出す
+  issues.py approved N        オーナーが承認した既存テストのパスを 1 行ずつ出す
+  issues.py escalations       未解決の escalation と、その申請・最後のコメントを JSON で出す
+メインのチャットがオーナーのアカウントで呼ぶもの(bot のアカウントでは断る):
+  issues.py approve N [PATH ...]  既存テストの変更を承認する。PATH を省くと最新の申請をそのまま承認する
+  issues.py answer N TEXT         人間の判断をコメントに残し、再開できるようにする
+  issues.py replan N TEXT         分け直しに回す
 """
 
 import json
@@ -18,6 +24,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOOP_LABELS = ["loop:planned", "loop:ready", "loop:in-progress", "loop:replan", "loop:escalated"]
 REQUIRED_SECTIONS = ["ac", "depends on", "likely files", "scope", "out of scope"]
+
+
+# 実装役が既存テストの変更を申し出るコメントの印
+TEST_CHANGE_REQUEST = "<!-- loop:test-change-request -->"
+# オーナーのアカウントだけが書く印(.github/scripts/guard.py の APPROVAL_MARK と同じ)
+APPROVAL_MARK = "<!-- loop:test-change-approval -->"
+HUMAN_ANSWER = "<!-- loop:human-answer -->"
 
 
 def gh(*args: str) -> str:
@@ -210,6 +223,131 @@ def promote() -> int:
     return 0
 
 
+def is_test_case_file(rel: str) -> bool:
+    """.github/scripts/guard.py と同じ判定。承認で開けるのはテストケースのファイルだけ。"""
+    if rel.startswith("backend/tests/"):
+        return rel.endswith("Test.php") and not rel.startswith("backend/tests/Arch/")
+    if rel.startswith(("frontend/", "e2e/")):
+        return re.search(r"\.(test|spec)\.[cm]?[jt]sx?$", rel.rsplit("/", 1)[-1]) is not None
+    return False
+
+
+def owner() -> str:
+    """承認できる GitHub のユーザー(config の CODEOWNER)。"""
+    if os.environ.get("CODEOWNER"):
+        return os.environ["CODEOWNER"]
+    m = re.search(r"^CODEOWNER=(\S+)", (REPO_ROOT / "scripts/loop/config").read_text(encoding="utf-8"), flags=re.M)
+    return m.group(1) if m else ""
+
+
+def block_after(body: str, mark: str) -> list[tuple[str, str]]:
+    """印の次の行から空行までの `- `path`: 説明` を (パス, 説明) で返す。"""
+    block = body.split(mark, 1)[1].lstrip("\n").split("\n\n", 1)[0]
+    return [(m.group(1), m.group(2).strip()) for m in re.finditer(r"^\s*-\s+`?([^`\s:]+)`?:?[ \t]*(.*)$", block, flags=re.M)]
+
+
+def approved_tests(comments: list[dict], approver: str) -> list[str]:
+    """承認者が書いた承認のコメントに並ぶパス(.github/scripts/guard.py と同じ読み方)。"""
+    out: list[str] = []
+    for c in comments:
+        if approver and (c.get("author") or {}).get("login", "").lower() == approver.lower() \
+                and APPROVAL_MARK in (c.get("body") or ""):
+            out += [p for p, _ in block_after(c["body"], APPROVAL_MARK)]
+    return out
+
+
+def latest_request(comments: list[dict]) -> list[tuple[str, str]]:
+    for c in reversed(comments):
+        if TEST_CHANGE_REQUEST in (c.get("body") or ""):
+            return block_after(c["body"], TEST_CHANGE_REQUEST)
+    return []
+
+
+def approval_comment(approved: list[tuple[str, str]]) -> str:
+    return ("人間がメインのチャットで、次の既存テストの変更を承認しました。この PR に限り、ここに並ぶファイルだけ変えてよい。\n\n"
+            + APPROVAL_MARK + "\n" + "\n".join(f"- `{p}`" + (f": {d}" if d else "") for p, d in approved) + "\n")
+
+
+def escalations() -> int:
+    """メインのチャットが人間に選択肢を出すための、未解決の escalation の一覧(JSON)。"""
+    out = gh("issue", "list", "--state", "open", "--label", "loop:escalated", "--limit", "100",
+             "--json", "number,title,url,body,labels")
+    rows = []
+    for i in sorted(json.loads(out), key=lambda i: i["number"]):
+        comments = json.loads(gh("issue", "view", str(i["number"]), "--json", "comments"))["comments"]
+        rows.append({
+            "number": i["number"], "title": i["title"], "url": i["url"],
+            "labels": [l["name"] for l in i["labels"]],
+            # 計画の escalation(質問だけの issue)はテンプレートの見出しを持たない
+            "feature": "ac" in sections(i["body"]),
+            "test_change_request": [{"path": p, "change": d} for p, d in latest_request(comments)],
+            "last_comment": comments[-1]["body"] if comments else "",
+        })
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+    return 0
+
+
+class NotOwner(Exception):
+    pass
+
+
+def as_owner() -> None:
+    """操作するのがオーナーのアカウントか確かめる。ループは bot のトークンで動くので、ここで止まる。"""
+    login = gh("api", "user", "--jq", ".login").strip()
+    if not owner() or login.lower() != owner().lower():
+        raise NotOwner(f"run this as {owner() or 'CODEOWNER'} (the main chat), not as {login}")
+
+
+def open_escalation(n: int) -> dict:
+    issue = json.loads(gh("issue", "view", str(n), "--json", "body,labels,comments,state"))
+    issue["labels"] = {l["name"] for l in issue["labels"]}
+    if issue["state"] != "OPEN" or "loop:escalated" not in issue["labels"]:
+        raise NotOwner(f"#{n} is not an open escalated issue")
+    return issue
+
+
+def resume(n: int, issue: dict) -> None:
+    if "ac" in sections(issue["body"]):
+        gh("issue", "edit", str(n), "--remove-label", "loop:escalated", "--add-label", "loop:ready")
+    else:
+        # 質問だけの issue は、回答を残して閉じる。計画の続きは ctl.sh start plan で動かす
+        gh("issue", "close", str(n))
+
+
+def approve(n: int, paths: list[str]) -> int:
+    as_owner()
+    issue = open_escalation(n)
+    request = latest_request(issue["comments"])
+    approved = [(p, dict(request).get(p, "")) for p in paths] if paths else request
+    if not approved:
+        raise NotOwner(f"#{n} has no test change request; pass the paths to approve")
+    bad = [p for p, _ in approved if not is_test_case_file(p)]
+    if bad:
+        raise NotOwner(f"only test case files can be approved, not: {', '.join(bad)}")
+    gh("issue", "comment", str(n), "--body", approval_comment(approved))
+    resume(n, issue)
+    print(f"#{n}: approved {len(approved)} test file(s)")
+    return 0
+
+
+def answer(n: int, text: str) -> int:
+    as_owner()
+    issue = open_escalation(n)
+    gh("issue", "comment", str(n), "--body", f"{HUMAN_ANSWER}\n人間の判断(メインのチャットで選んだもの):\n\n{text}\n")
+    resume(n, issue)
+    print(f"#{n}: answered")
+    return 0
+
+
+def send_to_replan(n: int, text: str) -> int:
+    as_owner()
+    open_escalation(n)
+    gh("issue", "comment", str(n), "--body", f"{HUMAN_ANSWER}\n人間の判断: 分け直す。\n\n{text}\n")
+    gh("issue", "edit", str(n), "--add-label", "loop:replan", "--remove-label", "loop:escalated,loop:ready")
+    print(f"#{n}: sent to replan")
+    return 0
+
+
 def slug(n: int) -> int:
     title = json.loads(gh("issue", "view", str(n), "--json", "title"))["title"]
     s = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40].strip("-")
@@ -227,6 +365,22 @@ def main(argv: list[str]) -> int:
         return status()
     if cmd == "promote":
         return promote()
+    if cmd == "approved" and len(argv) == 3:
+        comments = json.loads(gh("issue", "view", argv[2], "--json", "comments")).get("comments") or []
+        print("\n".join(approved_tests(comments, owner())))
+        return 0
+    if cmd == "escalations":
+        return escalations()
+    try:
+        if cmd == "approve" and len(argv) >= 3:
+            return approve(int(argv[2]), argv[3:])
+        if cmd == "answer" and len(argv) == 4:
+            return answer(int(argv[2]), argv[3])
+        if cmd == "replan" and len(argv) == 4:
+            return send_to_replan(int(argv[2]), argv[3])
+    except NotOwner as e:
+        print(e, file=sys.stderr)
+        return 1
     if cmd == "slug" and len(argv) == 3:
         return slug(int(argv[2]))
     print(__doc__, file=sys.stderr)

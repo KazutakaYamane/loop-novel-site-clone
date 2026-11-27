@@ -57,7 +57,9 @@ def launch(action, target, prompt):
     args = guarded_args() + ["-c", "model_reasoning_effort=" + json.dumps(os.environ["EFFORT"]),
                              "-c", "sandbox_mode=" + json.dumps(sandbox),
                              "-c", "sandbox_workspace_write.network_access=true",
-                             "-c", 'approval_policy="never"']
+                             "-c", 'approval_policy="never"',
+                             # 既定では名前に TOKEN を含む変数がシェルに渡らない。ループは bot の GH_TOKEN で GitHub を操作する
+                             "-c", "shell_environment_policy.ignore_default_excludes=true"]
     roots = []
     if mode == "canary-spec":
         roots.append(os.environ["LOOP_CANARY_DIR"])

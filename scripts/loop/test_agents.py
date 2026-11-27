@@ -83,6 +83,112 @@ class AgentContracts(unittest.TestCase):
                     denied = result.returncode != 0 or "deny" in result.stdout
                     self.assertEqual(not denied, allowed, (agent, rel, result.stdout, result.stderr))
 
+    def test_hook_opens_only_the_tagged_tests_the_human_approved(self):
+        # 人間がチャットで承認したテストは、オーケストレーターが LOOP_APPROVED_TESTS で渡す(docs/adr/0017)
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            files = {"e2e/tests/approved.spec.ts": 'test("a", { tag: "@AC-F1-1" }, async () => {});\n',
+                     "e2e/tests/other.spec.ts": 'test("o", { tag: "@AC-F1-2" }, async () => {});\n',
+                     "e2e/tests/helpers.ts": "export const x = 1; // AC-F1-1\n"}
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            for rel, text in files.items():
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(text)
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                            "commit", "-q", "-m", "base"], check=True)
+            approved = "e2e/tests/approved.spec.ts\ne2e/tests/helpers.ts\n"
+            for rel, allowed in [("e2e/tests/approved.spec.ts", True), ("e2e/tests/other.spec.ts", False),
+                                 ("e2e/tests/helpers.ts", False)]:
+                write = {"tool_name": "Write", "cwd": str(repo), "tool_input": {"file_path": str(repo / rel), "content": "x\n"}}
+                patch = {"tool_name": "apply_patch", "cwd": str(repo),
+                         "tool_input": {"command": f"*** Begin Patch\n*** Delete File: {rel}\n*** End Patch"}}
+                for agent, data in (("claude", write), ("codex", patch)):
+                    result = self.invoke("guard-hook.py", data=data, LOOP_AGENT=agent, LOOP_MODE="normal",
+                                         LOOP_DEFAULT_REF="HEAD", LOOP_APPROVED_TESTS=approved)
+                    denied = result.returncode != 0 or "deny" in result.stdout
+                    self.assertEqual(not denied, allowed, (agent, rel, result.stdout, result.stderr))
+
+    def test_hook_keeps_agents_from_deciding_escalations(self):
+        # 人間の判断はメインのチャットがオーナーのアカウントで書く。ループのエージェントには書かせない
+        for command, denied in [("scripts/loop/ctl.sh approve 122", True), ('"$LOOP_DIR/ctl.sh" answer 122 ok', True),
+                                ("scripts/loop/ctl.sh replan 122 x", True),
+                                ("python3 -I scripts/loop/issues.py approve 122 e2e/tests/a.spec.ts", True),
+                                ('gh issue comment 122 --body "<!-- loop:test-change-approval -->"', True),
+                                ('gh issue comment 122 --body "<!-- loop:test-change-request -->\n- `e2e/tests/a.spec.ts`: x"', False),
+                                ("gh issue view 122 --comments", False), ("scripts/loop/ctl.sh status", False)]:
+            for agent in ("claude", "codex"):
+                result = self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": command}},
+                                     LOOP_AGENT=agent, LOOP_MODE="normal")
+                self.assertEqual(result.returncode == 2 or "deny" in result.stdout, denied, (agent, command, result.stdout))
+        with tempfile.TemporaryDirectory() as directory:
+            write = {"tool_name": "Write", "cwd": directory,
+                     "tool_input": {"file_path": "/tmp/c.md", "content": "<!-- loop:test-change-approval -->\n- `e2e/tests/a.spec.ts`\n"}}
+            result = self.invoke("guard-hook.py", data=write, LOOP_AGENT="claude", LOOP_MODE="normal")
+            self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_hook_keeps_agents_on_the_bot_token(self):
+        # ループは bot の GH_TOKEN で動く。オーナーの gh の認証や SSH の鍵に持ち替えさせない
+        for command, denied in [("GH_TOKEN= gh pr merge 5", True), ("unset GH_TOKEN; gh issue edit 5", True),
+                                ("env -u GH_TOKEN gh api user", True), ("gh auth token", True),
+                                ("cat ~/.config/gh/hosts.yml", True), ("GH_CONFIG_DIR=$HOME/.config/gh gh api user", True),
+                                ("git -c credential.helper= push origin HEAD", True), ("GIT_SSH_COMMAND='ssh -i ~/.ssh/id' git push", True),
+                                ("gh pr view 5 --json state", False), ("git push origin 7-feature", False)]:
+            for agent in ("claude", "codex"):
+                result = self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": command}},
+                                     LOOP_AGENT=agent, LOOP_MODE="normal")
+                self.assertEqual(result.returncode == 2 or "deny" in result.stdout, denied, (agent, command, result.stdout))
+        read = {"tool_name": "Read", "tool_input": {"file_path": os.path.expanduser("~/.config/gh/hosts.yml")}}
+        self.assertEqual(self.invoke("guard-hook.py", data=read, LOOP_AGENT="claude", LOOP_MODE="normal").returncode, 2)
+
+    def bot_env(self, tmp, login):
+        (tmp / "gh").write_text(f"""#!/bin/sh
+echo "$GH_TOKEN $GH_CONFIG_DIR $*" >>"{tmp}/gh-calls"
+echo {login}
+""")
+        (tmp / "gh").chmod(0o755)
+        (tmp / "state").mkdir(exist_ok=True)
+        (tmp / "state/bot-token").write_text("bot-secret\n")
+        env = {**os.environ, "STATE_DIR": str(tmp / "state"), "PATH": str(tmp) + os.pathsep + os.environ["PATH"],
+               "BOT_LOGIN": "loop-bot", "GITHUB_TOKEN": "owner-secret"}
+        env.pop("LOOP_AGENT", None)
+        return env
+
+    def test_the_loop_uses_the_bot_account_for_github_and_git(self):
+        # 人間の判断はオーナーの書き込みだけが認められるので、ループは別のアカウント(bot)で動く(docs/adr/0017)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            script = ('source "$1"; use_bot_account || exit $?; '
+                      'echo "$GH_TOKEN|${GITHUB_TOKEN:-}|$GIT_AUTHOR_NAME|$GIT_COMMITTER_EMAIL"; '
+                      'git config --get-all credential.https://github.com.helper | tail -n1; '
+                      'printf "protocol=https\nhost=github.com\n\n" | git credential fill')
+            result = subprocess.run(["bash", "-c", script, "test", HERE / "run.sh"], capture_output=True, text=True,
+                                    env=self.bot_env(tmp, "loop-bot"), timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = result.stdout.splitlines()
+            self.assertEqual(lines[0], "bot-secret||loop-bot|loop-bot@users.noreply.github.com")
+            self.assertIn("password=bot-secret", result.stdout)
+            self.assertIn(f"bot-secret {tmp}/state/gh-bot api user", (tmp / "gh-calls").read_text())
+
+    def test_the_loop_refuses_a_token_of_another_account(self):
+        for login, extra in [("KazutakaYamane", {}), ("someone", {}), ("KazutakaYamane", {"BOT_LOGIN": "KazutakaYamane"})]:
+            with self.subTest(login=login, extra=extra), tempfile.TemporaryDirectory() as tmp:
+                tmp = Path(tmp)
+                result = subprocess.run(["bash", "-c", 'source "$1"; use_bot_account', "test", HERE / "run.sh"],
+                                        capture_output=True, text=True, env={**self.bot_env(tmp, login), **extra}, timeout=60)
+                self.assertEqual(result.returncode, 78, result.stderr)
+
+    def test_decisions_are_refused_from_the_bot_account(self):
+        # 承認・回答・分け直しはオーナーのアカウント(メインのチャット)だけが書ける
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            env = self.bot_env(tmp, "loop-bot")
+            for args in (["approve", "122"], ["answer", "122", "ok"], ["replan", "122", "x"]):
+                result = subprocess.run([HERE / "ctl.sh", *args], capture_output=True, text=True, env=env, timeout=60)
+                self.assertEqual(result.returncode, 1, (args, result.stdout, result.stderr))
+                self.assertIn("not as loop-bot", result.stderr)
+            self.assertNotIn("comment", (tmp / "gh-calls").read_text())
+
     def test_hook_keeps_workers_from_rewriting_the_issue_body(self):
         # CI は issue の Likely files で基準画像の更新を認めるので、実装とレビューの役はそれを書き換えられない
         for command, denied in [("gh issue edit 5 --body-file /tmp/b.md", True), ("gh issue edit 5 -b x", True),
