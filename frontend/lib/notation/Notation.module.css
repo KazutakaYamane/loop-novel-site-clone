@@ -1,0 +1,10 @@
+/* 値は docs/kakuyomu-reference/reading-preview.md の「ルビと傍点」から採った。
+   1 字ごとに上中央へ 3×3px の点を置く。点の分の上余白は文字の大きさの 0.349 倍(17.5px で 6.11px、16px で 5.58px)。 */
+.emphasis {
+  font-style: normal;
+}
+
+.dot {
+  padding-top: 0.349em;
+  background: radial-gradient(circle, currentColor 1.5px, transparent 1.5px) top center / 3px 3px no-repeat;
+}
