@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { connection } from "next/server";
 import { fetchNewArrivals, newArrivalsPage } from "./newArrivals";
+
+vi.mock("next/server", () => ({ connection: vi.fn() }));
 
 const fetchMock = vi.fn<typeof fetch>();
 
 beforeEach(() => {
   fetchMock.mockReset();
+  vi.mocked(connection).mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("fetch", fetchMock);
   vi.stubEnv("INTERNAL_API_URL", "http://nginx:8080");
 });
@@ -61,4 +65,20 @@ test.each([
   [["3", "4"], 1],
 ])("the page query %j becomes page %i", (value, page) => {
   expect(newArrivalsPage(value)).toBe(page);
+});
+
+test("@AC-F4-4 waits for a request before reading the API, so the build never prerenders the list", async () => {
+  let arrive = () => {};
+  vi.mocked(connection).mockReturnValue(new Promise<void>((resolve) => { arrive = resolve; }));
+  vi.stubEnv("INTERNAL_API_URL", "");
+  fetchMock.mockResolvedValue(Response.json({ data: [work], links: { next: null }, meta: { current_page: 1 } }));
+
+  const result = fetchNewArrivals(1);
+  await Promise.resolve();
+  expect(fetchMock).not.toHaveBeenCalled();
+
+  vi.stubEnv("INTERNAL_API_URL", "http://nginx:8080");
+  arrive();
+  await expect(result).resolves.toEqual({ works: [work], page: 1, hasNext: false });
+  expect(fetchMock).toHaveBeenCalledOnce();
 });

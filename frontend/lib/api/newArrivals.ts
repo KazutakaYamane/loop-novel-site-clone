@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { internalApiUrl } from "./internalApiUrl";
 
 export type NewArrivalWork = {
@@ -21,8 +22,10 @@ type NewArrivalsResponse = {
   meta: { current_page: number };
 };
 
-// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(ADR 0028)
+// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(ADR 0028)。
+// トップは cookie も URL の値も使わないので、connection() で止めないとビルド時に先読みされる
 export async function fetchNewArrivals(page: number): Promise<NewArrivals> {
+  await connection();
   const path = `/api/new-arrivals?page=${page}`;
   const response = await fetch(internalApiUrl(path), {
     headers: { Accept: "application/json" },
