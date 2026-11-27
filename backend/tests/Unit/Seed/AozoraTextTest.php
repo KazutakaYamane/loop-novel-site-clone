@@ -61,6 +61,18 @@ test('the credit is the colophon from the base text line to the end', function (
     ]));
 })->group('AC-F8-2');
 
+test('annotations in the colophon do not appear in the credit', function () {
+    $work = (new AozoraText)->convert("題\n著者\n\n本文\n\n底本：「本」［＃「本」は底本では「元」］\n入力：誰か\n");
+
+    expect($work->credit)->toBe("底本：「本」\n入力：誰か");
+})->group('AC-F8-2');
+
+test('the body starts right after the closing rule of the legend, and a rule inside a line stays as text', function () {
+    $source = "題\n著者\n\n-------------------------------------------------------\n【記号】\n-------------------------------------------------------\n　一行目\n　線は-----------の形\n\n底本：本\n";
+
+    expect(episodesOf($source))->toBe([['題', "　一行目\n　線は-----------の形"]]);
+})->group('AC-F8-3');
+
 test('a text without headings becomes one episode titled with the work title, without the legend or the credit', function () {
     expect(episodesOf(aozoraSource("\n　一行目。\n\n　三行目。\n")))->toBe([
         ['蜘蛛の糸', "　一行目。\n\n　三行目。"],

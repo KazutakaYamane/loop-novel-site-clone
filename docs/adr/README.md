@@ -35,3 +35,4 @@
 | [0027](0027-notation-emphasis-escape-and-linear-scan.md) | 傍点・`《` のエスケープ・入れ子を一度の線形走査で解釈する | 採用 |
 | [0028](0028-new-arrivals-and-publish-visibility.md) | トップの新着の並びと件数、公開の即時反映 | 採用 |
 | [0029](0029-mobile-footer-line-height.md) | スマートフォンのフッターの行の高さを整数にする | 採用 |
+| [0030](0030-aozora-seed-data.md) | 青空文庫のシードデータの持ち方と投入 | 採用 |

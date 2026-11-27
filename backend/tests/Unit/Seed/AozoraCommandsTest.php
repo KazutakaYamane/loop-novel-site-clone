@@ -43,14 +43,17 @@ test('aozora:fetch saves each listed text as UTF-8, one request at a time with a
         'www.aozora.gr.jp/cards/000879/files/42_ruby_154.zip' => Http::response(aozoraZip("鼻\r\n禅智内供《ぜんちないぐ》\r\n")),
     ]);
 
-    $this->artisan('aozora:fetch', ['--data' => $this->dir])->assertSuccessful();
+    $this->artisan('aozora:fetch', ['--data' => $this->dir])
+        ->expectsOutputToContain($this->dir.'/source/kumo.txt')
+        ->expectsOutputToContain($this->dir.'/source/hana.txt')
+        ->assertSuccessful();
 
-    expect(File::get($this->dir.'/source/kumo.txt'))->toBe("蜘蛛の糸\r\n～御釈迦様《おしゃかさま》\r\n")
-        ->and(File::get($this->dir.'/source/hana.txt'))->toBe("鼻\r\n禅智内供《ぜんちないぐ》\r\n");
+    // 改行は LF にそろえて、リポジトリに入る内容と手元のファイルを同じにする
+    expect(File::get($this->dir.'/source/kumo.txt'))->toBe("蜘蛛の糸\n～御釈迦様《おしゃかさま》\n")
+        ->and(File::get($this->dir.'/source/hana.txt'))->toBe("鼻\n禅智内供《ぜんちないぐ》\n");
     Http::assertSentCount(2);
     Http::assertSent(fn (Request $request) => $request->hasHeader('User-Agent', 'yomikaki-seed-fetch'));
-    Sleep::assertSleptTimes(1);
-    Sleep::assertSlept(fn ($duration) => $duration->totalSeconds >= 1);
+    Sleep::assertSequence([Sleep::for(2)->seconds()]);
 })->group('AC-F8-5');
 
 test('aozora:fetch does not request texts that are already saved', function () {
@@ -79,7 +82,7 @@ test('aozora:fetch stops when the archive has no text file', function () {
     unlink($path);
 
     expect(fn () => $this->artisan('aozora:fetch', ['--data' => $this->dir])->run())
-        ->toThrow(RuntimeException::class, '92_ruby_164.zip');
+        ->toThrow(RuntimeException::class, 'テキストファイルが無い: https://www.aozora.gr.jp/cards/000879/files/92_ruby_164.zip');
     expect(File::exists($this->dir.'/source/kumo.txt'))->toBeFalse();
 })->group('AC-F8-5');
 
@@ -99,7 +102,9 @@ test('aozora:convert writes the converted work of each saved text without the ne
     File::put($this->dir.'/source/kumo.txt', $source);
     File::put($this->dir.'/source/hana.txt', "鼻\r\n芥川竜之介\r\n\r\n　内供の鼻\r\n\r\n底本：「鼻」\r\n");
 
-    $this->artisan('aozora:convert', ['--data' => $this->dir])->assertSuccessful();
+    $this->artisan('aozora:convert', ['--data' => $this->dir])
+        ->expectsOutputToContain($this->dir.'/works/kumo.json')
+        ->assertSuccessful();
 
     expect(json_decode(File::get($this->dir.'/works/kumo.json'), true))->toBe([
         'title' => '蜘蛛の糸',

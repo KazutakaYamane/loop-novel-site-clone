@@ -130,9 +130,7 @@ final readonly class AozoraText
     // JIS X 0213 の面区点を、EUC-JIS-2004 のバイト列を通して Unicode にする
     private function jisX0213(int $plane, int $row, int $cell): ?string
     {
-        if ($row > 94 || $cell > 94) {
-            return null;
-        }
+        // 94 を超える区・点は 1 バイトに収まらず、変換できない文字(?)になる
         $bytes = ($plane === 2 ? "\x8F" : '').pack('C2', $row + 0xA0, $cell + 0xA0);
         $character = (string) mb_convert_encoding($bytes, 'UTF-8', 'EUC-JP-2004');
 

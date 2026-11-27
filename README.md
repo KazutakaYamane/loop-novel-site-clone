@@ -26,7 +26,7 @@ scripts/worktree-setup.sh
 1. `.env` を `.env.example` から作る。Compose のプロジェクト名(`loop-<ブランチ名>`)と、すべてのポート(20000〜32599)をこの worktree 専用にする
 2. `backend/.env` を作り、`APP_KEY` を生成する
 3. イメージを作り、`composer install` と E2E の `npm ci` を行う
-4. MySQL と Redis を起動し、マイグレーションを流す
+4. MySQL と Redis を起動し、マイグレーションを流して、青空文庫のシードの作品を入れる(下の「シードデータ」)
 5. Laravel(nginx)と Next.js(web)を起動し、画面が応答するまで待つ
 
 最後に表示される URL で開ける(フロントエンドは `NEXT_PORT`、API は `APP_PORT`。値は `.env` にある)。
@@ -59,6 +59,29 @@ docker compose logs --no-log-prefix web | jq -R 'fromjson? | select(.level == "e
 ```
 
 nginx のアクセスログや Next.js 自身の出力など、JSON でない行も混ざるので `fromjson?` で読み飛ばす。前から使っている worktree の `backend/.env` に `LOG_CHANNEL=stack` が残っていたら `LOG_CHANNEL=json` に直す。
+
+## シードデータ
+
+開発・E2E・CI の DB には、青空文庫の著作権が切れた 15 作品が、作者ごとのシードのユーザー(`seed-<作者>@example.com`、ログインはできない)の作品として入る(docs/adr/0030)。`scripts/worktree-setup.sh` がマイグレーションの後に入れる。手で入れ直すときは次のとおり。何度実行しても作品や話は重複せず、同じ内容に上書きされる。ネットワークには接続しない。
+
+```bash
+docker compose exec app php artisan db:seed --force
+```
+
+データは `backend/database/data/aozora/` にある。
+
+- `manifest.json`: 作品の並び、青空文庫の図書カードと zip の URL、ジャンル、タグ、新たに書いたキャッチコピーとあらすじ、最終話の公開時刻
+- `source/<slug>.txt`: 青空文庫から取得したままのテキスト(UTF-8、LF)
+- `works/<slug>.json`: 変換後の作品(タイトル、作者、話ごとの本文、底本・入力・校正などのクレジット)
+
+作品を足したり入れ替えたりするときは、`manifest.json` に行を足してから、開発の環境で次を実行し、できたファイルをコミットする。取得はまだ `source/` に無い作品だけを、2 秒ずつ空けて 1 件ずつ行う。
+
+```bash
+docker compose exec app php artisan aozora:fetch     # 青空文庫から zip を取得して source/ に保存する(ネットワークを使う)
+docker compose exec app php artisan aozora:convert   # source/ を変換して works/ に書く(ネットワークを使わない)
+```
+
+変換は、ルビ(`《》`、`｜`)をそのまま F5 の記法として残し、`［＃「…」に傍点］` を傍点(`《《…》》`)に、大見出し・中見出しを話の区切りに、外字の注記を Unicode の文字にして、そのほかの注記(`［＃…］`)を消す。符号位置の分からない外字があると止まるので、作品を選び直す。作品は作者・翻訳者とも没後 70 年を過ぎたもの(図書カードの著作権フラグが「なし」)から、短いものを選ぶ。
 
 ## チェックを手元で動かす
 

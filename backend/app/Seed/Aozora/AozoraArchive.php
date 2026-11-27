@@ -32,7 +32,7 @@ final readonly class AozoraArchive
             throw new RuntimeException('テキストファイルが無い: '.$url);
         }
 
-        return (string) mb_convert_encoding($text, 'UTF-8', 'SJIS-win');
+        return str_replace("\r\n", "\n", (string) mb_convert_encoding($text, 'UTF-8', 'SJIS-win'));
     }
 
     private function firstText(ZipArchive $zip): ?string
