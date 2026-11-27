@@ -108,3 +108,38 @@ test("a tab opened before login shows the restart notice on navigation after exp
     }
   },
 );
+
+test("a tab showing the expiry notice recognizes a demo restarted in another tab on navigation",
+  { tag: "@AC-F9-4" },
+  async ({ page, browser, baseURL }) => {
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "デモ読者として始める" }).click();
+    const header = page.getByRole("banner");
+    await expect(header.getByTestId("current-user")).toBeVisible();
+
+    const expired = await newClient(browser, baseURL, uniqueClientAddress());
+    try {
+      await expired.addCookies(await page.context().cookies());
+      await header.getByRole("button", { name: "ログアウト" }).click();
+      await expect(header.getByRole("link", { name: "ログイン" })).toBeVisible();
+
+      const readingTab = await expired.newPage();
+      await readingTab.goto("/");
+      const restartNotice = readingTab.getByRole("link", { name: "デモを始め直す" });
+      await expect(restartNotice).toBeVisible();
+
+      const restartTab = await expired.newPage();
+      await restartTab.goto("/login");
+      await restartTab.getByRole("main").getByRole("button", { name: "デモ読者として始める" }).click();
+      const currentUser = restartTab.getByTestId("current-user");
+      await expect(currentUser).toBeVisible();
+
+      await restartNotice.click();
+      await expect(readingTab).toHaveURL("/login");
+      await expect(restartNotice).toHaveCount(0);
+      await expect(readingTab.getByTestId("current-user")).toHaveText(await currentUser.innerText());
+    } finally {
+      await expired.close();
+    }
+  },
+);

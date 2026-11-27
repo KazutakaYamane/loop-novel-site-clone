@@ -12,6 +12,7 @@ export async function RestartDemoNotice() {
 
   return (
     <section className={styles.notice} aria-labelledby="restart-demo-heading">
+      <RefreshGuestSessionOnNavigation />
       <h2 id="restart-demo-heading">ログイン状態が解除されました</h2>
       <p>ヨミカキを使うには、新しいデモを始めてください。</p>
       <Link href="/login" className={styles.action}>デモを始め直す</Link>
