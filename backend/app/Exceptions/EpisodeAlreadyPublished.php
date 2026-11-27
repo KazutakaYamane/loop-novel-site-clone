@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
-use Illuminate\Http\JsonResponse;
-use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
-// 公開後の編集は作らない(要件書 7 章)。公開済みの話を保存・公開し直そうとしたときに投げる
-final class EpisodeAlreadyPublished extends RuntimeException
+// 公開後の編集は作らない(要件書 7 章)。公開済みの話を保存・公開し直そうとしたときに 409 で拒む。
+// 利用者の操作で起きる拒否なので、HTTP の例外としてエラーのログに残さない
+final class EpisodeAlreadyPublished extends HttpException
 {
-    public function render(): JsonResponse
+    public function __construct()
     {
-        return new JsonResponse(['message' => '公開済みのエピソードは編集できません。'], 409);
+        parent::__construct(409, '公開済みのエピソードは編集できません。');
     }
 }
