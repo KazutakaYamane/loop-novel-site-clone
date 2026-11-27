@@ -30,19 +30,16 @@
 /frontend/vitest.setup.* @KazutakaYamane
 /e2e/playwright.config.* @KazutakaYamane
 
-# 既存のテスト(bootstrap の時点)
+# 既存のテスト(bootstrap の時点)。AC のタグを持たないテストケースのファイルは変更してよいので書かない(AGENTS.md の Tests)。
+# arch() の規則と、テストの補助ファイル・設定は書く
 /backend/tests/Arch/ArchTest.php @KazutakaYamane
-/backend/tests/Feature/DatabaseTest.php @KazutakaYamane
-/backend/tests/Feature/HealthCheckTest.php @KazutakaYamane
 /backend/tests/Pest.php @KazutakaYamane
 /backend/tests/TestCase.php @KazutakaYamane
-/backend/tests/Unit/UserTest.php @KazutakaYamane
 /backend/tests/bin/pest-for-infection.php @KazutakaYamane
 /e2e/.gitignore @KazutakaYamane
 /e2e/package.json @KazutakaYamane
 /e2e/package-lock.json @KazutakaYamane
 /e2e/tsconfig.json @KazutakaYamane
-/e2e/tests/skeleton.spec.ts @KazutakaYamane
 
 # 既存の ADR(bootstrap の時点)
 /docs/adr/0001-worktree-isolation.md @KazutakaYamane

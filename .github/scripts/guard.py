@@ -4,7 +4,8 @@
 2. Protected paths: 保護されたパスを変えていないか(base に .github/CODEOWNERS があるときだけ)
 3. 依存: composer.json と package.json の依存の追加・変更が scripts/loop/dependencies.md の表に収まるか
 
-使い方: python3 .github/scripts/guard.py --base origin/main [--head HEAD]
+使い方: python3 .github/scripts/guard.py --base origin/main [--head HEAD] [--issue-body-file FILE]
+--issue-body-file は PR が閉じる issue の本文。その "## Likely files" に名指しされた見た目の基準画像だけ、変更を認める。
 違反があれば一覧を出して終了コード 1 で終わる。
 """
 
@@ -415,6 +416,39 @@ EXISTING = [
 # base にあるファイルの行を消してはいけない(末尾などへの追記は認める)
 APPEND_ONLY = ["backend/AGENTS.md", "frontend/AGENTS.md", "docs/adr/README.md"]
 
+# 受け入れ条件のタグ(README.md の「テストと受け入れ条件」)。Pest の group('AC-F1-1') も数えるので @ は付けない
+AC_TAG = re.compile(r"AC-F\d+-\d+")
+SCREENSHOT = re.compile(r"^e2e/(?:.+/)?__screenshots__/.+\.png$")
+
+
+def is_test_case_file(p: str) -> bool:
+    """テストケースそのものを書くファイル。補助ファイル、設定、arch() の規則は含めない。"""
+    if p.startswith("backend/tests/"):
+        return p.endswith("Test.php") and not p.startswith("backend/tests/Arch/")
+    name = p.rsplit("/", 1)[-1]
+    if p.startswith(("frontend/", "e2e/")):
+        return re.search(r"\.(test|spec)\.[cm]?[jt]sx?$", name) is not None
+    return False
+
+
+def untagged_test(path: str, base_text: str) -> bool:
+    """受け入れ条件のタグを 1 つも持たない既存のテストファイル。回帰テストではないので変更と削除を認める(AGENTS.md の Tests)。"""
+    return is_test_case_file(path) and AC_TAG.search(base_text) is None
+
+
+def likely_files(issue_body: str) -> list[str]:
+    """issue の "## Likely files" 節の各行のパス(scripts/loop/issues.py と同じ読み方)。"""
+    m = re.search(r"^##\s*Likely files\s*$(.*?)(?=^##\s|\Z)", re.sub(r"<!--.*?-->", "", issue_body, flags=re.S),
+                  flags=re.M | re.S | re.I)
+    if not m:
+        return []
+    return [x.group(1) for x in re.finditer(r"^\s*-\s+`?([^`\s]+)`?", m.group(1), flags=re.M)]
+
+
+def declared_baseline(path: str, declared: list[str]) -> bool:
+    """issue が変えると名指しした基準画像か。e2e/visual/** のような広い指定では名指しにならない。"""
+    return SCREENSHOT.match(path) is not None and match(path, [d for d in declared if "__screenshots__/" in d])
+
 
 def match(path: str, patterns: list[str]) -> bool:
     for pat in patterns:
@@ -427,10 +461,11 @@ def match(path: str, patterns: list[str]) -> bool:
     return False
 
 
-def check_protected(files: dict[str, FileDiff], base: str) -> list[str]:
+def check_protected(files: dict[str, FileDiff], base: str, declared: list[str] | None = None) -> list[str]:
     errors = []
     for path, fd in sorted(files.items()):
-        existed = show(base, path) is not None
+        base_text = show(base, path)
+        existed = base_text is not None
         if path in APPEND_ONLY or match(path, APPEND_ONLY):
             if existed and (fd.status == "D" or fd.removed):
                 errors.append(f"{path}: [Protected paths] existing lines were changed or removed; only additions are allowed")
@@ -438,6 +473,8 @@ def check_protected(files: dict[str, FileDiff], base: str) -> list[str]:
         if match(path, ANY_CHANGE):
             errors.append(f"{path}: [Protected paths] check or harness configuration cannot be changed ({fd.status})")
         elif match(path, EXISTING) and existed:
+            if untagged_test(path, base_text) or declared_baseline(path, declared or []):
+                continue
             errors.append(f"{path}: [Protected paths] existing file cannot be changed or deleted ({fd.status})")
     return errors
 
@@ -528,7 +565,9 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True, help="base branch ref, e.g. origin/main")
     ap.add_argument("--head", default="HEAD")
+    ap.add_argument("--issue-body-file", help="the body of the issue the PR closes")
     args = ap.parse_args(argv)
+    declared = likely_files(Path(args.issue_body_file).read_text(encoding="utf-8")) if args.issue_body_file else []
 
     files = pr_diff(args.base, args.head)
     errors: list[str] = []
@@ -536,7 +575,7 @@ def main(argv: list[str]) -> int:
     errors += check_special_cases(files, args.head)
 
     if show(args.base, ".github/CODEOWNERS") is not None:
-        errors += check_protected(files, args.base)
+        errors += check_protected(files, args.base, declared)
     else:
         print("guard: .github/CODEOWNERS is not on the base branch; protected paths are not checked (bootstrap)")
 

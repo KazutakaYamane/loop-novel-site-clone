@@ -53,6 +53,49 @@ class AgentContracts(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(not result.stdout, allowed, result.stdout)
 
+    def test_hook_opens_untagged_existing_tests_but_not_tagged_ones(self):
+        # AC のタグを持たない既存のテストファイルは回帰テストではないので、変更してよい(AGENTS.md の Tests)
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            files = {"e2e/tests/tagged.spec.ts": 'test("t", { tag: "@AC-F1-1" }, async () => {});\n',
+                     "e2e/tests/untagged.spec.ts": 'test("u", async () => {});\n',
+                     "e2e/tests/helpers.ts": "export const x = 1;\n",
+                     "backend/tests/Feature/PlainTest.php": "<?php\ntest('p', fn () => expect(1)->toBe(1));\n",
+                     "backend/tests/Arch/ArchTest.php": "<?php\narch()->preset()->php();\n",
+                     "e2e/visual/__screenshots__/a.spec.ts/top-pc.png": "PNG"}
+            subprocess.run(["git", "init", "-q", repo], check=True)
+            for rel, text in files.items():
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(text)
+            (repo / "e2e/visual/__screenshots__/a.spec.ts/top-pc.png").write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.com",
+                            "commit", "-q", "-m", "base"], check=True)
+            for rel, allowed in [("e2e/tests/untagged.spec.ts", True), ("backend/tests/Feature/PlainTest.php", True),
+                                 ("e2e/visual/__screenshots__/a.spec.ts/top-pc.png", True),
+                                 ("e2e/tests/tagged.spec.ts", False), ("e2e/tests/helpers.ts", False),
+                                 ("backend/tests/Arch/ArchTest.php", False)]:
+                write = {"tool_name": "Write", "cwd": str(repo), "tool_input": {"file_path": str(repo / rel), "content": "x\n"}}
+                patch = {"tool_name": "apply_patch", "cwd": str(repo),
+                         "tool_input": {"command": f"*** Begin Patch\n*** Delete File: {rel}\n*** End Patch"}}
+                for agent, data in (("claude", write), ("codex", patch)):
+                    result = self.invoke("guard-hook.py", data=data, LOOP_AGENT=agent, LOOP_MODE="normal", LOOP_DEFAULT_REF="HEAD")
+                    denied = result.returncode != 0 or "deny" in result.stdout
+                    self.assertEqual(not denied, allowed, (agent, rel, result.stdout, result.stderr))
+
+    def test_hook_keeps_workers_from_rewriting_the_issue_body(self):
+        # CI は issue の Likely files で基準画像の更新を認めるので、実装とレビューの役はそれを書き換えられない
+        for command, denied in [("gh issue edit 5 --body-file /tmp/b.md", True), ("gh issue edit 5 -b x", True),
+                                ("gh api -X PATCH repos/o/r/issues/5 -f body=x", True),
+                                ("gh issue edit 5 --add-label loop:replan", False), ("gh issue comment 5 --body x", False)]:
+            for agent in ("claude", "codex"):
+                result = self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": command}},
+                                     LOOP_AGENT=agent, LOOP_MODE="normal", LOOP_LOCAL_REVIEW_FLOW="1")
+                self.assertEqual(result.returncode == 2 or "deny" in result.stdout, denied, (agent, command, result.stdout))
+        result = self.invoke("guard-hook.py", data={"tool_name": "Bash", "tool_input": {"command": "gh issue edit 5 --body-file b.md"}},
+                             LOOP_AGENT="claude", LOOP_MODE="normal", LOOP_LOCAL_REVIEW_FLOW="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_hook_hides_canaries_from_bootstrap(self):
         # カナリアを隠すのは hook の事前の阻止だけ。bootstrap ではカナリアに触れる操作を止め、それ以外は通す
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,6 +117,40 @@ class AgentContracts(unittest.TestCase):
                 rows = self.invoke("codex_agent.py", "normalize", log, str(code), "1").stdout.splitlines()
                 self.assertFalse(json.loads(rows[-1])["result"])
                 self.assertTrue(json.loads(rows[-1])["is_error"])
+
+    def plan_cycle_with(self, tmp, validate_exits):
+        # validate の終了コードを round ごとに与え、critic は毎回 changes を返す
+        script = r"""
+source "$1"
+calls="$2/calls"; rounds=($3)
+run_agent() { LAST_LOG="$2/$3"; echo "agent $1" >>"$calls"; }
+record_metrics() { :; }
+ensure_plan_worktree() { echo "$WT"; }
+git() { :; }
+result_of() { case "$LAST_LOG" in *critic*) echo "RESULT: changes still wrong" ;; *) echo "RESULT: planned 3" ;; esac; }
+py() { if [ "$2" = validate ]; then echo validate >>"$calls"; i=$(grep -c '^validate' "$calls"); return "${rounds[$((i-1))]}"; fi
+       echo "py $2" >>"$calls"; }
+open_escalation() { echo "escalate $1" >>"$calls"; }
+WT="$2"; MAX_PLAN_ROUNDS=3
+rc=0; plan_cycle plan.md plan || rc=$?; echo "rc $rc" >>"$calls"
+"""
+        subprocess.run(["bash", "-c", script, "test", HERE / "run.sh", tmp, " ".join(map(str, validate_exits))],
+                       capture_output=True, text=True, timeout=10, env={**os.environ, "STATE_DIR": tmp})
+        return (Path(tmp) / "calls").read_text().splitlines()
+
+    def test_validated_plan_is_promoted_when_the_critic_never_approves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = self.plan_cycle_with(tmp, [0, 0, 0])
+            self.assertIn("py promote", calls)
+            self.assertNotIn("escalate plan did not converge", calls)
+            self.assertEqual(calls[-1], "rc 0")
+
+    def test_plan_that_fails_validation_in_the_last_round_escalates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = self.plan_cycle_with(tmp, [0, 0, 1])
+            self.assertNotIn("py promote", calls)
+            self.assertIn("escalate plan did not converge", calls)
+            self.assertEqual(calls[-1], "rc 1")
 
     def test_time_limit_terminates_agent(self):
         with tempfile.TemporaryDirectory() as tmp:

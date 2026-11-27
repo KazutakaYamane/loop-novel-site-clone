@@ -7,11 +7,13 @@ Round: ${ROUND} of ${MAX_ROUNDS}. scripts/loop/validate-plan.sh already passed, 
    - It cannot be finished in one PR with its E2E tests, or it mixes unrelated concerns.
    - Its scope does not actually satisfy the AC IDs it lists, or it includes work that belongs to another issue's AC.
    - A dependency is missing: it needs something that another issue builds but does not depend on that issue.
+   - A dependency is not needed: the issue neither builds on the other issue's work nor edits the same source file (files in `SHARED_ADDITIVE` of scripts/loop/issues.py do not count). Needless dependencies serialize the loop, so one escalation stops everything after it.
+   - It will change what an existing screenshot baseline under `e2e/visual/__screenshots__/` shows, but does not name that baseline file in "Likely files". CI rejects updates to baselines the issue does not name.
    - "Likely files" is too vague to detect overlap (for example, a bare `frontend/**`), or clearly incomplete.
    - Its out-of-scope section is missing something that a reader would otherwise implement.
    - It plans something docs/requirements.md excludes ("7. 範囲外").
 3. For each split problem, comment on the affected issue with `gh issue comment`. Say what is wrong and what change would fix it. Edit nothing else.
-4. Implementation details are not split problems: which test data or demo user a test uses, what an ADR should say, screenshot baselines, caching, rate-limit design, and similar choices the implementation iteration makes. If you see a risk there, you may leave it as advice in an issue comment that starts with "Advice (not blocking):". The implementation iteration reads the issue comments. Advice never makes your result `changes`.
+4. Implementation details are not split problems: which test data or demo user a test uses, what an ADR should say, how screenshots are taken, caching, rate-limit design, and similar choices the implementation iteration makes. If you see a risk there, you may leave it as advice in an issue comment that starts with "Advice (not blocking):". The implementation iteration reads the issue comments. Advice never makes your result `changes`.
 
 Approve when you find no split problem, even if you left advice. Style preferences are not problems.
 

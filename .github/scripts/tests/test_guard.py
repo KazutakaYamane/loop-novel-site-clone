@@ -37,11 +37,17 @@ class Repo:
             "scripts/loop/dependencies.md": ALLOWLIST,
             "backend/composer.json": '{"require": {"php": "^8.5", "laravel/framework": "^13.17"}, "require-dev": {"pestphp/pest": "^5.0"}}',
             "frontend/package.json": '{"dependencies": {"next": "16.4.6"}, "devDependencies": {"vitest": "^5.1.2", "@types/node": "^26"}}',
-            "backend/tests/Feature/ExistingTest.php": "<?php\n\ntest('x', function () {\n    expect(1 + 1)->toBe(2);\n});\n",
-            "frontend/app/page.test.tsx": 'test("a", () => { expect(sum(1, 1)).toBe(2); });\n',
+            "backend/tests/Feature/ExistingTest.php": "<?php\n\ntest('x', function () {\n    expect(1 + 1)->toBe(2);\n})->group('AC-F1-1');\n",
+            "backend/tests/Feature/UntaggedTest.php": "<?php\n\ntest('u', function () {\n    expect(1 + 1)->toBe(2);\n});\n",
+            "backend/tests/Arch/ArchTest.php": "<?php\n\narch()->expect('App')->toUseStrictTypes();\n",
+            "backend/tests/Pest.php": "<?php\n\npest()->extend(Tests\\TestCase::class);\n",
+            "frontend/app/page.test.tsx": 'test("a @AC-F1-2", () => { expect(sum(1, 1)).toBe(2); });\n',
+            "frontend/app/untagged.test.tsx": 'test("a", () => { expect(sum(1, 1)).toBe(2); });\n',
             "frontend/app/page.tsx": "export default function Page() { return null; }\n",
             "backend/app/Models/User.php": "<?php\n\nclass User {}\n",
-            "e2e/tests/existing.spec.ts": 'test("e", async () => {});\n',
+            "e2e/tests/existing.spec.ts": 'test("e", { tag: "@AC-F1-3" }, async () => {});\n',
+            "e2e/tests/untagged.spec.ts": 'test("u", async () => {});\n',
+            "e2e/tests/helpers.ts": 'export const user = "demo";\n',
             "e2e/visual/__screenshots__/top.png": "PNG",
             "docs/adr/0001-first.md": "# 1\n",
             "docs/adr/README.md": "| 1 | first |\n",
@@ -72,13 +78,17 @@ class Repo:
         self.git("add", "-A")
         self.git("commit", "-q", "--allow-empty", "-m", "head")
 
-    def run_guard(self) -> tuple[int, str]:
+    def run_guard(self, issue_body: str | None = None) -> tuple[int, str]:
         cwd = os.getcwd()
         os.chdir(self.root)
         buf = io.StringIO()
+        args = ["--base", "base"]
+        if issue_body is not None:
+            (self.root.parent / "issue-body.md").write_text(issue_body)
+            args += ["--issue-body-file", str(self.root.parent / "issue-body.md")]
         try:
             with redirect_stdout(buf):
-                code = guard.main(["--base", "base"])
+                code = guard.main(args)
         finally:
             os.chdir(cwd)
         return code, buf.getvalue()
@@ -94,15 +104,15 @@ class GuardTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         self.repo.close()
 
-    def assertViolation(self, needle: str) -> None:
+    def assertViolation(self, needle: str, issue_body: str | None = None) -> None:
         self.repo.commit()
-        code, out = self.repo.run_guard()
+        code, out = self.repo.run_guard(issue_body)
         self.assertEqual(code, 1, out)
         self.assertIn(needle, out)
 
-    def assertClean(self) -> None:
+    def assertClean(self, issue_body: str | None = None) -> None:
         self.repo.commit()
-        code, out = self.repo.run_guard()
+        code, out = self.repo.run_guard(issue_body)
         self.assertEqual(code, 0, out)
 
 
@@ -376,6 +386,55 @@ class ProtectedPathTest(GuardTestCase):
     def test_updating_a_visual_baseline(self) -> None:
         self.repo.write("e2e/visual/__screenshots__/top.png", "PNG2")
         self.assertViolation("e2e/visual/__screenshots__/top.png: [Protected paths]")
+
+    def test_updating_a_baseline_the_issue_lists(self) -> None:
+        self.repo.write("e2e/visual/__screenshots__/top.png", "PNG2")
+        self.assertClean("## AC\n\n- AC-F1-1\n\n## Likely files\n\n- frontend/app/page.tsx\n- `e2e/visual/__screenshots__/top.png`\n\n## Scope\n\nx\n")
+
+    def test_updating_a_baseline_the_issue_lists_by_glob(self) -> None:
+        self.repo.write("e2e/visual/__screenshots__/top.png", "PNG2")
+        self.assertClean("## Likely files\n\n- e2e/visual/__screenshots__/**\n")
+
+    def test_a_broad_glob_does_not_name_the_baseline(self) -> None:
+        # e2e/visual/** のような広い指定では、基準画像を変えると宣言したことにならない
+        self.repo.write("e2e/visual/__screenshots__/top.png", "PNG2")
+        self.assertViolation("e2e/visual/__screenshots__/top.png: [Protected paths]", "## Likely files\n\n- e2e/visual/**\n- e2e/**\n")
+
+    def test_a_baseline_outside_the_issue_list(self) -> None:
+        self.repo.write("e2e/visual/__screenshots__/top.png", "PNG2")
+        self.assertViolation("e2e/visual/__screenshots__/top.png: [Protected paths]",
+                             "## Likely files\n\n- e2e/visual/__screenshots__/other.png\n\n## Notes\n\n- e2e/visual/__screenshots__/top.png\n")
+
+    def test_deleting_a_baseline_the_issue_lists(self) -> None:
+        self.repo.delete("e2e/visual/__screenshots__/top.png")
+        self.assertClean("## Likely files\n\n- e2e/visual/__screenshots__/top.png\n")
+
+    def test_the_issue_list_does_not_open_existing_tests(self) -> None:
+        self.repo.write("e2e/tests/existing.spec.ts", 'test("e", { tag: "@AC-F1-3" }, async () => { changed(); });\n')
+        self.assertViolation("e2e/tests/existing.spec.ts: [Protected paths]", "## Likely files\n\n- e2e/tests/existing.spec.ts\n")
+
+    def test_changing_and_deleting_untagged_tests(self) -> None:
+        self.repo.write("backend/tests/Feature/UntaggedTest.php", "<?php\n\ntest('u', function () {\n    expect(2 + 2)->toBe(4);\n});\n")
+        self.repo.delete("frontend/app/untagged.test.tsx")
+        self.repo.git("mv", "e2e/tests/untagged.spec.ts", "e2e/tests/renamed.spec.ts")
+        self.assertClean()
+
+    def test_an_untagged_test_may_be_replaced_by_a_tagged_one(self) -> None:
+        self.repo.write("e2e/tests/untagged.spec.ts", 'test("u", { tag: "@AC-F2-1" }, async () => { check(); });\n')
+        self.assertClean()
+
+    def test_untagged_support_files_stay_protected(self) -> None:
+        # タグを持たないのが普通の補助ファイルや arch() の規則は、タグの有無で開かない
+        for path in ["e2e/tests/helpers.ts", "backend/tests/Arch/ArchTest.php", "backend/tests/Pest.php"]:
+            with self.subTest(path=path):
+                self.tearDown()
+                self.setUp()
+                self.repo.write(path, "changed\n")
+                self.assertViolation(f"{path}: [Protected paths]")
+
+    def test_a_tag_anywhere_in_the_file_protects_it(self) -> None:
+        self.repo.write("frontend/app/page.test.tsx", 'test("a", () => { expect(sum(1, 1)).toBe(2); });\n')
+        self.assertViolation("frontend/app/page.test.tsx: [Protected paths]")
 
     def test_check_configuration(self) -> None:
         for path in ["backend/phpstan.neon", "backend/phpstan-baseline.neon", "frontend/eslint.config.mjs", "frontend/tsconfig.json",
