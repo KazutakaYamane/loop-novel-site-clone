@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 
 // フレームワークは単体テストの実行中だけ CSRF の検証を飛ばす。その判定だけを外して、本物の検証を通す。
@@ -151,13 +150,31 @@ test('a demo login from a session whose login has expired makes a new user', fun
         ->and(User::query()->whereKeyNot($first->getKey())->sole()->name)->not->toBe($first->name);
 })->group('AC-F2-4');
 
-test('there is no route that logs back in as an existing demo user', function () {
-    $uris = collect(Route::getRoutes()->getRoutes())
-        ->filter(fn ($route) => str_starts_with($route->uri(), 'api/'))
-        ->filter(fn ($route) => array_intersect($route->methods(), ['POST', 'PUT', 'PATCH']) !== [])
-        ->map(fn ($route) => $route->uri())
-        ->values()
-        ->all();
+// 後の issue が足す更新の経路と関係なく、ログインの唯一の入口であるデモログインで確かめる
+// (パスワードでのログインをデモログインの外から呼べないことは tests/Arch/AuthTest.php が確かめる)
+test('the demo login cannot be pointed at an existing user', function () {
+    ['session' => $session, 'token' => $token] = demoLoginAsBrowser($this);
+    $first = User::sole();
+    logOutAsBrowser($this, $session, ['X-CSRF-TOKEN' => $token])->assertNoContent();
 
-    expect($uris)->toBe(['api/demo-sessions']);
+    $guest = asBrowser($this, '')->getJson('/api/csrf-token')->assertOk();
+    $guestSession = (string) $guest->getCookie('yomikaki_session', false)?->getValue();
+    $login = asBrowser($this, $guestSession)
+        ->withHeader('X-CSRF-TOKEN', (string) $guest->json('token'))
+        ->postJson('/api/demo-sessions', [
+            'role' => 'reader',
+            'id' => $first->getKey(),
+            'user_id' => $first->getKey(),
+            'email' => $first->email,
+            'name' => $first->name,
+        ])
+        ->assertCreated();
+    $again = (string) $login->getCookie('yomikaki_session', false)?->getValue();
+
+    expect(User::count())->toBe(2);
+    $second = User::query()->whereKeyNot($first->getKey())->sole();
+    asBrowser($this, $again)->getJson('/api/user')
+        ->assertOk()
+        ->assertExactJson(['name' => $second->name]);
+    expect($second->name)->not->toBe($first->name);
 })->group('AC-F2-4');
