@@ -33,3 +33,5 @@
 | [0025](0025-reader-page-layout.md) | 読者向けの作品ページ・話ページ・見つからない画面の組み方 | 採用 |
 | [0026](0026-reader-ruby-notation.md) | 話のルビを Next.js のサーバーで組み立てる | 採用 |
 | [0027](0027-notation-emphasis-escape-and-linear-scan.md) | 傍点・`《` のエスケープ・入れ子を一度の線形走査で解釈する | 採用 |
+| [0028](0028-new-arrivals-and-publish-visibility.md) | トップの新着の並びと件数、公開の即時反映 | 採用 |
+| [0029](0029-mobile-footer-line-height.md) | スマートフォンのフッターの行の高さを整数にする | 採用 |
