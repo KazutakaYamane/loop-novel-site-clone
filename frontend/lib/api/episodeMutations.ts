@@ -1,10 +1,14 @@
 import { fetchCsrfToken } from "@/lib/api/csrfToken";
+import { isEpisodeRateLimited } from "./episodeRateLimit";
 import type { Episode } from "./myEpisodes";
 
 export type EpisodeInput = { title: string; body: string };
 
-// errors は Laravel の確かめのエラー(項目ごとの文言)。項目に結び付かない失敗は form に入れる
-export type EpisodeSaveResult = { ok: true; episode: Episode } | { ok: false; errors: Record<string, string[]> };
+// errors は Laravel の確かめのエラー(項目ごとの文言)。項目に結び付かない失敗は form に入れる。
+// rateLimited は送信回数の上限に当たったこと(AC-F4-9)
+export type EpisodeSaveResult =
+  | { ok: true; episode: Episode }
+  | { ok: false; errors: Record<string, string[]>; rateLimited?: true };
 
 const RETRY = { form: ["保存できませんでした。時間をおいてもう一度お試しください。"] };
 
@@ -32,6 +36,9 @@ async function send(path: string, method: "POST" | "PUT", input: EpisodeInput): 
   if (response.status === 422) {
     const { errors }: { errors: Record<string, string[]> } = await response.json();
     return { ok: false, errors };
+  }
+  if (isEpisodeRateLimited(response)) {
+    return { ok: false, errors: {}, rateLimited: true };
   }
   return { ok: false, errors: refusals[response.status] ?? RETRY };
 }

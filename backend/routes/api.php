@@ -12,6 +12,7 @@ use App\Http\Controllers\My\EpisodePublicationController;
 use App\Http\Controllers\My\WorkController;
 use App\Http\Controllers\Public\PublicEpisodeController;
 use App\Http\Controllers\Public\PublicWorkController;
+use App\Providers\EpisodeRateLimitServiceProvider;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/csrf-token', [CsrfTokenController::class, 'show']);
@@ -21,8 +22,12 @@ Route::delete('/session', [SessionController::class, 'destroy']);
 Route::get('/genres', [GenreController::class, 'index']);
 Route::middleware('auth')->prefix('my')->group(function () {
     Route::apiResource('works', WorkController::class)->only(['index', 'store', 'show', 'update']);
-    Route::apiResource('works.episodes', EpisodeController::class)->scoped()->only(['index', 'store', 'show', 'update']);
-    Route::post('works/{work}/episodes/{episode}/publication', [EpisodePublicationController::class, 'store'])->scopeBindings();
+    Route::apiResource('works.episodes', EpisodeController::class)->scoped()->only(['index', 'show']);
+    // 話の作成・編集の送信は利用者ごとに回数を制限する(docs/adr/0023)
+    Route::middleware('throttle:'.EpisodeRateLimitServiceProvider::LIMITER)->group(function () {
+        Route::apiResource('works.episodes', EpisodeController::class)->scoped()->only(['store', 'update']);
+        Route::post('works/{work}/episodes/{episode}/publication', [EpisodePublicationController::class, 'store'])->scopeBindings();
+    });
 });
 
 Route::get('/works/{work}', [PublicWorkController::class, 'show'])->whereNumber('work');

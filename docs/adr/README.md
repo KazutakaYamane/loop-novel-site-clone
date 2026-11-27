@@ -28,4 +28,5 @@
 | [0020](0020-work-ownership-policy.md) | 作品の更新は WorkPolicy で所有者だけに許す | 採用 |
 | [0021](0021-episodes-drafts-and-publishing.md) | 話のデータ、下書きと公開、文字数の上限 | 採用 |
 | [0022](0022-demo-author-initial-work.md) | デモ作者の初期の作品と、デモ作者の移動先 | 採用 |
+| [0023](0023-episode-submission-rate-limit.md) | 話の作成・編集の送信は、利用者ごとに 10 分間 30 回まで | 採用 |
 | [0024](0024-reader-publication-boundary.md) | 読者向けの作品と話は公開済みの話から決める | 採用 |
