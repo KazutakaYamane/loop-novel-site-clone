@@ -809,7 +809,7 @@ cmd_work() {
     command -v codex >/dev/null || { log "missing CLI: codex"; return 69; }
   fi
   declare -A running=()
-  local st n next_provider=claude provider quota_waiting=0
+  local st n preferred provider quota_waiting=0
   while :; do
     git -C "$REPO_ROOT" fetch -q origin
     for n in "${!running[@]}"; do
@@ -830,7 +830,7 @@ cmd_work() {
         [ -n "$n" ] || break
         provider=$work_provider
         if [ "$provider" = mixed ]; then
-          provider="$(py "$LOOP_DIR/worker_quota.py" "$STATE_DIR" "$next_provider")" || return 1
+          read -r provider preferred < <(py "$LOOP_DIR/worker_quota.py" "$STATE_DIR") || return 1
           case "$provider" in
             claude|codex) ;;
             *)
@@ -845,10 +845,9 @@ cmd_work() {
             rm -f "$STATE_DIR/status/main.json"
             quota_waiting=0
           fi
-          if [ "$provider" != "$next_provider" ]; then
-            log "#$n: using $provider because $next_provider is near or at its usage limit"
+          if [ "$provider" != "$preferred" ]; then
+            log "#$n: using $provider because $preferred is near or at its usage limit"
           fi
-          if [ "$provider" = claude ]; then next_provider=codex; else next_provider=claude; fi
         fi
         gh issue edit "$n" --add-label loop:in-progress >/dev/null
         run_issue "$n" "$provider" &

@@ -352,7 +352,7 @@ claude.ai のサブスクリプションで動かすと、5時間ごとや週ご
 
 ## ワーカーを選ぶ
 
-`scripts/loop/ctl.sh start work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
+`scripts/loop/ctl.sh start work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。次の順番は `<repo>.loop/mixed-next-provider` に残し、まとめ役を起動し直しても前回の続きから交互にする(起動のたびに Claude から始めると、escalation で起動し直すたびに Claude に偏るため)。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
 
 `work mixed` では、新しい Issue を割り当てるときに CLI が最後に報告した有効な利用枠を確認する。予定していた担当の 5 時間枠や週次枠が 90% を超えていれば、もう一方に割り当てる。両方とも上限に近い場合は、どちらかの枠が明けてから新しい Issue に着手する。利用率を取得できない場合は、ループが記録した利用上限を使い、その記録もなければ通常の順番で割り当てる。割り当て済みの Issue は同じ担当が続ける。作業中に利用上限に達した場合は、再開可能なら同じセッションの再開を待つ。
 
