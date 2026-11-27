@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { DEMO_SESSION_EXPIRED_EVENT } from "@/lib/api/sessionExpired";
 import { RestartDemoNotice } from "./RestartDemoNotice";
@@ -84,40 +84,36 @@ test("@AC-F9-4 a guest layout rechecks the cookies on each navigation without st
   expect(fetchApi).not.toHaveBeenCalled();
 });
 
-test("an authenticated layout checks again after navigation and refreshes only when expiry is reported", async () => {
-  const fetchApi = vi.fn<typeof fetch>()
-    .mockResolvedValueOnce(Response.json({ name: "デモ読者 #1" }))
-    .mockResolvedValueOnce(new Response(null, { status: 200 }))
-    .mockResolvedValueOnce(new Response(null, { status: 401, headers: { "X-Demo-Session-Expired": "1" } }));
+test("an authenticated layout rechecks on the server so a passive check cannot overwrite the browser session", async () => {
+  const fetchApi = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ name: "デモ読者 #1" }));
   vi.stubGlobal("fetch", fetchApi);
   const view = render(await RestartDemoNotice());
   expect(screen.queryByRole("region")).not.toBeInTheDocument();
-  expect(fetchApi).toHaveBeenNthCalledWith(2, "/api/user", expect.objectContaining({
-    cache: "no-store", headers: { Accept: "application/json" }, signal: expect.any(AbortSignal),
-  }));
   expect(state.router.refresh).not.toHaveBeenCalled();
 
   state.pathname = "/login";
   view.rerender(<WatchDemoSession />);
 
-  await waitFor(() => expect(state.router.refresh).toHaveBeenCalledOnce());
-  expect(fetchApi).toHaveBeenCalledTimes(3);
+  expect(fetchApi).toHaveBeenCalledExactlyOnceWith("http://nginx:8080/api/user", {
+    cache: "no-store", headers: { Accept: "application/json", Cookie: state.cookie },
+  });
+  expect(state.router.refresh).toHaveBeenCalledOnce();
 });
 
 test("an expired operation navigates to the login page or refreshes that page if it is already open", () => {
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 })));
   const view = render(<WatchDemoSession />);
 
   act(() => window.dispatchEvent(new Event(DEMO_SESSION_EXPIRED_EVENT)));
   expect(state.router.replace).toHaveBeenCalledExactlyOnceWith("/login");
   expect(state.router.refresh).not.toHaveBeenCalled();
+  view.unmount();
 
   state.pathname = "/login";
-  view.rerender(<WatchDemoSession />);
+  const loginView = render(<WatchDemoSession />);
   act(() => window.dispatchEvent(new Event(DEMO_SESSION_EXPIRED_EVENT)));
   expect(state.router.refresh).toHaveBeenCalledOnce();
 
-  view.unmount();
+  loginView.unmount();
   act(() => window.dispatchEvent(new Event(DEMO_SESSION_EXPIRED_EVENT)));
   expect(state.router.refresh).toHaveBeenCalledOnce();
 });

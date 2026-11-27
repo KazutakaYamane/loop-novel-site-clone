@@ -38,3 +38,4 @@
 | [0030](0030-aozora-seed-data.md) | 青空文庫のシードデータの持ち方と投入 | 採用 |
 | [0031](0031-scheduled-demo-reset.md) | シードの URL を保ってデモデータを毎日消す | 採用 |
 | [0032](0032-restart-demo-notice.md) | 期限切れのログインにデモの再開を案内する | 採用 |
+| [0033](0033-server-rendered-session-refresh.md) | 画面移動後のデモセッションはサーバー描画で確認する | 採用 |
