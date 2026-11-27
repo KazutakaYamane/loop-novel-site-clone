@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 const input = { title: "第2話", body: "本文" };
-const tooMany = () => Response.json({ message: "Too Many Attempts." }, { status: 429, headers: { "Retry-After": "600" } });
+const tooMany = () => Response.json({ message: "Too Many Attempts." }, { status: 429 });
 
 test("@AC-F4-9 only a 429 from Laravel means the submission limit was reached", () => {
   expect(isEpisodeRateLimited(tooMany())).toBe(true);
