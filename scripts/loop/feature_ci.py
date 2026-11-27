@@ -26,6 +26,14 @@ def main():
             raise SystemExit("timed out waiting for required checks on " + head)
         time.sleep(int(interval))
 
+    # PR の説明の書き換えなどで同じワークフローが走り直すと、古い実行はキャンセルになる。
+    # ワークフローとジョブ名ごとに一番新しい実行だけで判断する
+    latest = {}
+    for j in jobs:
+        key = (j.get("workflowName"), j["name"])
+        if key not in latest or (j.get("startedAt") or "") > (latest[key].get("startedAt") or ""):
+            latest[key] = j
+    jobs = list(latest.values())
     failed = [j for j in jobs if j.get("conclusion") != "SUCCESS"]
     if failed:
         for job in failed:

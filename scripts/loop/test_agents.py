@@ -563,6 +563,44 @@ emit("turn.completed", usage={"input_tokens": 7, "cached_input_tokens": 3, "outp
                 self.assertEqual((row["role"], row["model"], row["reasoning_effort"]), ("review", "review-model", effort))
 
 
+    def feature_ci(self, tmp, rollup):
+        """スタブの gh に statusCheckRollup を返させて feature_ci.py を動かす"""
+        tmp = Path(tmp)
+        (tmp / "gh").write_text("#!/usr/bin/env python3\nimport json, sys\n"
+                                f"rollup = {rollup!r}\n"
+                                "if sys.argv[1:3] == ['pr', 'view']:\n"
+                                "    print(json.dumps({'headRefOid': 'h', 'statusCheckRollup': rollup}))\n"
+                                "else:\n    print('[]')\n")
+        (tmp / "gh").chmod(0o755)
+        env = {**os.environ, "PATH": str(tmp) + os.pathsep + os.environ["PATH"]}
+        return subprocess.run([sys.executable, "-I", HERE / "feature_ci.py", "7", "h", "guard e2e", "0", "1"],
+                              capture_output=True, text=True, env=env, timeout=30)
+
+    def test_feature_ci_ignores_a_cancelled_run_that_a_newer_run_replaced(self):
+        # PR の説明を書き換えると同じワークフローが走り直し、古い実行はキャンセルになる(#123 で緑の PR が止まった)
+        def job(name, workflow, conclusion, started):
+            return {"name": name, "workflowName": workflow, "status": "COMPLETED", "conclusion": conclusion,
+                    "startedAt": started, "detailsUrl": f"https://example.com/actions/runs/{started[-3:-1]}/job/1"}
+        newer_success = [job("guard", "AC coverage", "CANCELLED", "2026-11-27T06:54:39Z"),
+                         job("guard", "AC coverage", "SUCCESS", "2026-11-27T06:54:42Z"),
+                         job("guard", "CI", "SUCCESS", "2026-11-27T06:54:41Z"),
+                         job("e2e", "CI", "SUCCESS", "2026-11-27T06:54:41Z")]
+        newer_failure = [job("guard", "CI", "SUCCESS", "2026-11-27T06:54:39Z"),
+                         job("guard", "CI", "FAILURE", "2026-11-27T06:54:42Z"),
+                         job("e2e", "CI", "SUCCESS", "2026-11-27T06:54:41Z")]
+        other_workflow_fails = [job("guard", "AC coverage", "CANCELLED", "2026-11-27T06:54:39Z"),
+                                job("guard", "AC coverage", "SUCCESS", "2026-11-27T06:54:42Z"),
+                                job("guard", "Guard", "FAILURE", "2026-11-27T06:54:41Z"),
+                                job("e2e", "CI", "SUCCESS", "2026-11-27T06:54:41Z")]
+        only_cancelled = [job("guard", "CI", "CANCELLED", "2026-11-27T06:54:39Z"),
+                          job("e2e", "CI", "SUCCESS", "2026-11-27T06:54:41Z")]
+        for label, rollup, ok in [("newer success", newer_success, True), ("newer failure", newer_failure, False),
+                                  ("another workflow fails", other_workflow_fails, False),
+                                  ("only cancelled", only_cancelled, False)]:
+            with tempfile.TemporaryDirectory() as tmp:
+                result = self.feature_ci(tmp, rollup)
+                self.assertEqual(result.returncode == 0, ok, (label, result.returncode, result.stdout, result.stderr))
+
     def run_bootstrap_stage(self, tmp, commit_each_session, fail_sessions, stale_head_reads=0):
         """スタブの claude と gh で bootstrap の green 段階を動かす。CI はセッション番号が fail_sessions に入る間だけ落ちる。
         PR の head は、最初の stale_head_reads 回だけ push 前のコミットを返す(GitHub の反映の遅れ)"""
