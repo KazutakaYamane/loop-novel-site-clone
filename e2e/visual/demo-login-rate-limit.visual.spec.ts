@@ -4,7 +4,7 @@ import { expect, test } from "../support/clientAddress";
 // 送信元の回数を使わない。本物の上限に当てて確かめるのは e2e/tests/demo-login-rate-limit.spec.ts(docs/adr/0017)
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/demo-sessions", (route) =>
-    route.fulfill({ status: 429, json: { message: "Too Many Attempts." }, headers: { "Retry-After": "3600" } }),
+    route.fulfill({ status: 429, json: { message: "Too Many Attempts." } }),
   );
 });
 

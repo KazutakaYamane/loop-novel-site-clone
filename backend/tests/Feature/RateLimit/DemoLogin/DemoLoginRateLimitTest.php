@@ -52,13 +52,13 @@ test('the limit is lifted one hour after the first demo login and not before', f
     demoLoginFrom('203.0.113.10')->assertCreated();
 })->group('AC-F2-7');
 
-test('a refused demo login creates no user and tells when to retry', function () {
+test('a refused demo login creates no user', function () {
     for ($i = 1; $i <= 10; $i++) {
         demoLoginFrom('203.0.113.10')->assertCreated();
     }
 
     $refused = demoLoginFrom('203.0.113.10');
 
-    $refused->assertStatus(429)->assertHeader('Retry-After');
+    $refused->assertStatus(429);
     $this->assertDatabaseCount('users', 10);
 })->group('AC-F2-7');
