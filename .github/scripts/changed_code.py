@@ -29,13 +29,29 @@ def line_ranges(lines: list[int]) -> list[tuple[int, int]]:
     return ranges
 
 
+# minimatch がグロブとみなすパス(Next.js の [id]、[...slug] など)。Stryker はグロブと行範囲の併用を設定エラーにする
+GLOB_MAGIC = re.compile(r"[*?\[\]{}]|[!+@*?]\(")
+
+
+def stryker_literal(path: str) -> str:
+    # Stryker はパターンの \ を / に変えるので、バックスラッシュではなく 1 文字の文字クラスで特殊文字を打ち消す
+    return re.sub(r"[*?\[\]{}()]", lambda m: f"[{m.group(0)}]", path)
+
+
 def stryker_targets(files: dict[str, FileDiff]) -> list[str]:
     out = []
     for path, fd in sorted(files.items()):
         if fd.status == "D" or fd.binary or not is_js_prod(path) or path.endswith(".d.ts"):
             continue
         rel = path.removeprefix("frontend/")
-        for start, end in line_ranges([n for n, _ in fd.added]):
+        ranges = line_ranges([n for n, _ in fd.added])
+        if not ranges:
+            continue
+        if GLOB_MAGIC.search(rel):
+            # 行範囲を付けられないので、このファイルだけは全体を変異させる
+            out.append(stryker_literal(rel))
+            continue
+        for start, end in ranges:
             out.append(f"{rel}:{start}-{end}")
     return out
 
