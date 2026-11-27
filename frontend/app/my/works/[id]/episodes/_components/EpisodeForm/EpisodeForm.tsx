@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import { createEpisode, publishEpisode, saveEpisode, type EpisodeSaveResult } from "@/lib/api/episodeMutations";
 import type { Episode } from "@/lib/api/myEpisodes";
 import { navigateTo } from "@/lib/navigation";
+import { EpisodeRateLimitNotice } from "@/app/my/_components/EpisodeRateLimitNotice/EpisodeRateLimitNotice";
 import { FieldError, FormError } from "@/app/my/works/_components/FieldError/FieldError";
 import styles from "./EpisodeForm.module.css";
 
@@ -17,6 +18,7 @@ export function EpisodeForm({ workId, episode }: Props) {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [sending, setSending] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
 
   async function submit(send: () => Promise<EpisodeSaveResult>, onSuccess: (saved: Episode) => void) {
     setSending(true);
@@ -25,8 +27,10 @@ export function EpisodeForm({ workId, episode }: Props) {
     setSending(false);
     if (!result.ok) {
       setErrors(result.errors);
+      setRateLimited(result.rateLimited === true);
       return;
     }
+    setRateLimited(false);
     setErrors({});
     onSuccess(result.episode);
   }
@@ -75,6 +79,7 @@ export function EpisodeForm({ workId, episode }: Props) {
         )}
       </div>
       <FormError messages={errors.form} />
+      {rateLimited && <EpisodeRateLimitNotice />}
       <label className={styles.label} htmlFor="episode-title">
         エピソードタイトル
       </label>
