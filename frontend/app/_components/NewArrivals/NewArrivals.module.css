@@ -1,5 +1,5 @@
 /* 値は docs/kakuyomu-reference/new-arrivals.md の新着の一覧から採った */
-/* 行の高さは整数の px に丸める。小数の高さはカードの位置で 1px 変わり、要素単位の画像が安定しない(docs/adr/0026) */
+/* 行の高さは整数の px に丸める。小数の高さはカードの位置で 1px 変わり、要素単位の画像が安定しない(ADR 0027) */
 .root {
   width: 100%;
   max-width: 825px;
@@ -59,6 +59,13 @@
 
 .author {
   color: #555;
+}
+
+.episodeTitle {
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
 }
 
 .introduction {
@@ -122,7 +129,8 @@
   }
 
   .title,
-  .author {
+  .author,
+  .episodeTitle {
     font-size: 13px;
     line-height: 20px;
   }

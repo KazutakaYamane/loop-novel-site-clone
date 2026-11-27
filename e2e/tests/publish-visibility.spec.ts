@@ -59,7 +59,11 @@ test("publishing the first episode shows the work and the episode to guests righ
   await expect(page).toHaveURL(`/my/works/${workId}`);
 
   await guestPage.goto("/");
-  await expect(guestPage.getByTestId("new-arrivals").getByRole("link", { name: title })).toBeVisible();
+  const card = guestPage.getByTestId("new-arrival-work").filter({
+    has: guestPage.getByRole("link", { name: title, exact: true }),
+  });
+  await expect(card.getByRole("link", { name: title, exact: true })).toBeVisible();
+  await expect(card.getByText("第1話 灯台の朝", { exact: true })).toBeVisible();
   await guestPage.goto(`/works/${workId}`);
   await expect(guestPage.getByRole("heading", { level: 1, name: title })).toBeVisible();
   await expect(guestPage.getByRole("navigation", { name: "目次" }).getByRole("link")).toHaveText(["第1話 灯台の朝"]);
@@ -69,14 +73,19 @@ test("publishing the first episode shows the work and the episode to guests righ
   await guest.close();
 });
 
-// 新着のカードは話を出さず、公開時刻は秒までなので、同じ秒に公開した他の作品との前後は E2E で確かめない(docs/adr/0026)
-test("publishing a later draft shows it to guests on the work page and the episode page right away", { tag: "@AC-F4-4" }, async ({ page, browser, baseURL }) => {
+test("publishing a later draft shows it to guests in new arrivals and on the work and episode pages right away", { tag: "@AC-F4-4" }, async ({ page, browser, baseURL }) => {
   // デモ作者の初期の作品は、公開済みの第1話と下書きの第2話を持って始まる(AC-F2-5)
   await startAsDemoAuthor(page);
   const [, workId, draftId] = new URL(page.url()).pathname.match(/\/works\/(\d+)\/episodes\/(\d+)\/edit$/) ?? [];
 
   const guest = await newClient(browser, baseURL, uniqueClientAddress());
   const guestPage = await guest.newPage();
+  const workLink = guestPage.locator(`a[href="/works/${workId}"]`);
+  const card = guestPage.getByTestId("new-arrival-work").filter({ has: workLink });
+  await guestPage.goto("/");
+  await expect(card.getByText("第1話 岬の灯台", { exact: true })).toBeVisible();
+  await expect(card.getByText("第2話 最初の便り", { exact: true })).toHaveCount(0);
+
   await guestPage.goto(`/works/${workId}`);
   await expect(guestPage.getByRole("navigation", { name: "目次" }).getByRole("link")).toHaveText(["第1話 岬の灯台"]);
 
@@ -84,7 +93,9 @@ test("publishing a later draft shows it to guests on the work page and the episo
   await expect(page).toHaveURL(`/my/works/${workId}`);
 
   await guestPage.goto("/");
-  await expect(guestPage.getByTestId("new-arrivals").locator(`a[href="/works/${workId}"]`)).toBeVisible();
+  await expect(card.locator(workLink)).toBeVisible();
+  await expect(card.getByText("第2話 最初の便り", { exact: true })).toBeVisible();
+  await expect(card.getByText("第1話 岬の灯台", { exact: true })).toHaveCount(0);
   await guestPage.goto(`/works/${workId}`);
   await expect(guestPage.getByRole("navigation", { name: "目次" }).getByRole("link")).toHaveText(["第1話 岬の灯台", "第2話 最初の便り"]);
   await guestPage.goto(`/works/${workId}/episodes/${draftId}`);

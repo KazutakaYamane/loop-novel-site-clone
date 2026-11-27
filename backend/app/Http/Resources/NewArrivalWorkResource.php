@@ -8,7 +8,11 @@ use App\Models\Work;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin Work */
+/**
+ * @mixin Work
+ *
+ * @property-read string $latest_episode_title
+ */
 final class NewArrivalWorkResource extends JsonResource
 {
     /** @return array<string, mixed> */
@@ -20,6 +24,7 @@ final class NewArrivalWorkResource extends JsonResource
             'catchphrase' => $this->catchphrase,
             'introduction' => $this->introduction,
             'author_name' => $this->user->name,
+            'latest_episode_title' => $this->latest_episode_title,
         ];
     }
 }

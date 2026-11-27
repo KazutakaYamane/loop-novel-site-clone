@@ -12,7 +12,7 @@ it('lists works by the time their latest episode was published, newest first', f
     $old = Work::factory()->for($author)->create(['title' => '古い更新', 'catchphrase' => '遠い岸から', 'introduction' => '岬の日誌']);
     $recent = Work::factory()->create(['title' => '新しい更新']);
     $middle = Work::factory()->create(['title' => '中ほどの更新']);
-    Episode::factory()->for($old)->published()->create(['published_at' => Carbon::parse('2026-11-01 10:00:00')]);
+    $oldEpisode = Episode::factory()->for($old)->published()->create(['published_at' => Carbon::parse('2026-11-01 10:00:00')]);
     Episode::factory()->for($recent)->published()->create(['published_at' => Carbon::parse('2026-11-02 10:00:00')]);
     // 話を作った順ではなく、最後に公開された時刻で並ぶ
     Episode::factory()->for($recent)->published()->create(['published_at' => Carbon::parse('2026-11-20 10:00:00')]);
@@ -28,8 +28,25 @@ it('lists works by the time their latest episode was published, newest first', f
         'catchphrase' => '遠い岸から',
         'introduction' => '岬の日誌',
         'author_name' => '灯台の作者',
+        'latest_episode_title' => $oldEpisode->title,
     ]);
 })->group('AC-F7-1');
+
+it('returns the latest published title for each work, breaking episode ties by ID', function (): void {
+    $work = Work::factory()->create();
+    $other = Work::factory()->create();
+    $at = Carbon::parse('2026-11-27 12:00:00');
+    Episode::factory()->for($work)->published()->create(['title' => '同じ秒の先の話', 'published_at' => $at]);
+    Episode::factory()->for($work)->published()->create(['title' => '同じ秒の後の話', 'published_at' => $at]);
+    Episode::factory()->for($work)->published()->create(['title' => '先に公開した話', 'published_at' => $at->copy()->subDay()]);
+    Episode::factory()->for($work)->create(['title' => '未公開の下書き']);
+    Episode::factory()->for($other)->published()->create(['title' => '別の作品の話', 'published_at' => $at->copy()->addDay()]);
+
+    $response = $this->getJson('/api/new-arrivals')->assertOk();
+
+    expect($response->json('data.*.id'))->toBe([$other->id, $work->id])
+        ->and($response->json('data.*.latest_episode_title'))->toBe(['別の作品の話', '同じ秒の後の話']);
+})->group('AC-F4-4');
 
 it('puts the later created work first when the latest publications share a second', function (): void {
     $first = Work::factory()->create();

@@ -16,16 +16,22 @@ final class NewArrivalsController
 
     public function index(): AnonymousResourceCollection
     {
+        $latestEpisode = Episode::query()
+            ->select(['title', 'published_at'])
+            ->whereColumn('work_id', 'works.id')
+            ->published()
+            ->orderByDesc('published_at')
+            ->orderByDesc('id')
+            ->limit(1);
+
         $works = Work::query()
             ->published()
             ->with('user')
-            ->addSelect(['last_published_at' => Episode::query()
-                ->selectRaw('max(published_at)')
-                ->whereColumn('work_id', 'works.id')
-                ->published()])
-            ->orderByDesc('last_published_at')
-            // 公開時刻は秒までなので、同じ秒に並んだときは後に作った作品を前にする(docs/adr/0026)
-            ->orderByDesc('id')
+            ->joinLateral($latestEpisode, 'latest_episode')
+            ->select(['works.*', 'latest_episode.title as latest_episode_title'])
+            ->orderByDesc('latest_episode.published_at')
+            // 公開時刻は秒までなので、同じ秒に並んだときは後に作った作品を前にする(ADR 0027)
+            ->orderByDesc('works.id')
             ->simplePaginate(self::PER_PAGE);
 
         return NewArrivalWorkResource::collection($works);

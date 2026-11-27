@@ -6,8 +6,8 @@ import { NewArrivals } from "./NewArrivals";
 vi.mock("@/lib/api/newArrivals", () => ({ fetchNewArrivals: vi.fn() }));
 
 const works: NewArrivalWork[] = [
-  { id: 8, title: "新しい更新", catchphrase: "遠い岸から", introduction: "岬の日誌", author_name: "灯台の作者" },
-  { id: 3, title: "古い更新", catchphrase: null, introduction: null, author_name: "海の作者" },
+  { id: 8, title: "新しい更新", catchphrase: "遠い岸から", introduction: "岬の日誌", author_name: "灯台の作者", latest_episode_title: "朝の灯台" },
+  { id: 3, title: "古い更新", catchphrase: null, introduction: null, author_name: "海の作者", latest_episode_title: "潮の満ち引き" },
 ];
 
 beforeEach(() => {
@@ -39,6 +39,16 @@ test("@AC-F7-2 each work links to its work page", async () => {
 
   expect(screen.getByRole("link", { name: "新しい更新" })).toHaveAttribute("href", "/works/8");
   expect(screen.getByRole("link", { name: "古い更新" })).toHaveAttribute("href", "/works/3");
+});
+
+test("@AC-F4-4 each card displays its latest published episode title", async () => {
+  vi.mocked(fetchNewArrivals).mockResolvedValue({ works, page: 1, hasNext: false });
+
+  render(await NewArrivals({ page: 1 }));
+
+  const [newer, older] = screen.getAllByRole("article");
+  expect(within(newer).getByText("朝の灯台", { exact: true })).toBeVisible();
+  expect(within(older).getByText("潮の満ち引き", { exact: true })).toBeVisible();
 });
 
 test("the first page links only to the next page", async () => {

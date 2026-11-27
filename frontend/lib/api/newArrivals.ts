@@ -6,6 +6,7 @@ export type NewArrivalWork = {
   catchphrase: string | null;
   introduction: string | null;
   author_name: string;
+  latest_episode_title: string;
 };
 
 export type NewArrivals = {
@@ -20,7 +21,7 @@ type NewArrivalsResponse = {
   meta: { current_page: number };
 };
 
-// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(docs/adr/0026)
+// 公開の直後にゲストへ出すため、キャッシュせずリクエストごとに読む(ADR 0027)
 export async function fetchNewArrivals(page: number): Promise<NewArrivals> {
   const path = `/api/new-arrivals?page=${page}`;
   const response = await fetch(internalApiUrl(path), {

@@ -14,7 +14,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const work = { id: 3, title: "海の手帖", catchphrase: null, introduction: "岬の日誌", author_name: "灯台の作者" };
+const work = {
+  id: 3,
+  title: "海の手帖",
+  catchphrase: null,
+  introduction: "岬の日誌",
+  author_name: "灯台の作者",
+  latest_episode_title: "朝の灯台",
+};
 
 test("@AC-F4-4 reads the requested page of new arrivals on every request without cookies", async () => {
   fetchMock.mockResolvedValue(Response.json({

@@ -28,6 +28,7 @@ export async function NewArrivals({ page: requestedPage }: { page: number }) {
                 <Link href={`/works/${work.id}`}>{work.title}</Link>
               </h3>
               <p className={styles.author} data-testid="new-arrival-author">{work.author_name}</p>
+              <p className={styles.episodeTitle}>{work.latest_episode_title}</p>
               {work.introduction && <p className={styles.introduction}>{work.introduction}</p>}
             </div>
             {work.catchphrase && <p className={styles.catchphrase}>{work.catchphrase}</p>}
