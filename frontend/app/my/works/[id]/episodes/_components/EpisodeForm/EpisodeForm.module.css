@@ -1,0 +1,137 @@
+/* 値は docs/kakuyomu-reference/episodes.md の「執筆画面」から採った */
+.form {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 50px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 40px;
+}
+
+.saved {
+  flex: 1;
+  color: var(--color-text-weak);
+  font-size: 12px;
+}
+
+.draft,
+.publish {
+  padding: 8px 10px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.draft {
+  border: 1px solid #bbb;
+  color: var(--color-text);
+  background: #ddd;
+}
+
+.publish {
+  border: 1px solid #0990cc;
+  color: var(--color-surface);
+  background: var(--color-accent);
+}
+
+.draft:disabled,
+.publish:disabled {
+  border-color: var(--color-border);
+  color: #aaa;
+  background: #f2f1f0;
+  cursor: default;
+}
+
+/* カクヨムの執筆画面は欄の名前を出さない。支援技術には名前を渡すため、見た目だけ隠す */
+.label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.title,
+.body {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+}
+
+/* カクヨムはタイトルの下に、入力中だけ 2px の青い線を出す。この線を入力中の印にする */
+.title {
+  padding: 0 0 4px;
+  outline: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: 24.5px;
+  line-height: 31.85px;
+}
+
+.title:focus {
+  border-bottom-color: var(--color-accent);
+}
+
+.body {
+  height: 480px;
+  padding: 30px 0;
+  font-size: 17.5px;
+  line-height: 31.5px;
+  resize: vertical;
+}
+
+.title[aria-invalid="true"],
+.body[aria-invalid="true"] {
+  border-bottom: 2px solid var(--color-error);
+}
+
+.counter {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-weak);
+  font-size: 11.9px;
+  line-height: 25px;
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .toolbar {
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .saved {
+    width: 100%;
+    flex: none;
+  }
+
+  .title {
+    font-size: 16.25px;
+    line-height: 21.125px;
+  }
+
+  .body {
+    height: 320px;
+    padding: 20px 0;
+    font-size: 16px;
+    line-height: 28.8px;
+  }
+
+  .counter {
+    font-size: 11.05px;
+  }
+}

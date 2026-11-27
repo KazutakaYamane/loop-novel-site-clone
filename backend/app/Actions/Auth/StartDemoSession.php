@@ -16,6 +16,7 @@ final readonly class StartDemoSession
     public function __construct(
         private RegisterUser $registerUser,
         private LogInWithPassword $logIn,
+        private CreateDemoAuthorWork $createDemoAuthorWork,
     ) {}
 
     public function handle(DemoRole $role): User
@@ -29,6 +30,9 @@ final readonly class StartDemoSession
             $user = $this->registerUser->handle($role->userName(), $email, $password);
             // 一覧で互いに見分けられるよう、重ならない ID を名前に足す(AC-F2-3)
             $user->forceFill(['name' => $role->userName().' #'.$user->id])->save();
+            if ($role === DemoRole::Author) {
+                $this->createDemoAuthorWork->handle($user);
+            }
         });
 
         return $this->logIn->handle($email, $password)

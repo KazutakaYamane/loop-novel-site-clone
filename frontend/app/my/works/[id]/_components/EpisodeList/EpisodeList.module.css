@@ -1,0 +1,115 @@
+/* 値は docs/kakuyomu-reference/episodes.md の「作品の話の一覧」から採った */
+.section {
+  margin-top: 32px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.heading {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.create {
+  padding: 8px 10px;
+  border: 1px solid #0990cc;
+  border-radius: 3px;
+  color: var(--color-surface);
+  background: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.empty {
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-weak);
+  font-size: 14px;
+}
+
+.list {
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 50px;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.item:last-child {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.status {
+  flex: none;
+  width: 55px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.draft {
+  color: #999;
+  background: #eee;
+}
+
+.published {
+  color: var(--color-surface);
+  background: var(--color-accent);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 0;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.date {
+  flex: none;
+  /* 日付の幅を月日の桁数に左右させず、行ごとに右端と左端をそろえる */
+  min-width: 11em;
+  color: var(--color-text-weak);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16.1px;
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .heading {
+    font-size: 15px;
+    line-height: 15px;
+  }
+
+  .item {
+    flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 8px 0;
+    font-size: 13px;
+  }
+
+  .title {
+    padding: 4px 0;
+  }
+
+  .date {
+    width: 100%;
+  }
+}

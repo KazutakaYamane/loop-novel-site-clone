@@ -26,3 +26,5 @@
 | [0018](0018-human-decisions-from-the-owner-account.md) | 人間の判断は、メインのチャットがオーナーのアカウントで書く | 採用 |
 | [0019](0019-work-fields-and-limits.md) | 作品の項目の持ち方と、文字数・タグの上限 | 採用 |
 | [0020](0020-work-ownership-policy.md) | 作品の更新は WorkPolicy で所有者だけに許す | 採用 |
+| [0021](0021-episodes-drafts-and-publishing.md) | 話のデータ、下書きと公開、文字数の上限 | 採用 |
+| [0022](0022-demo-author-initial-work.md) | デモ作者の初期の作品と、デモ作者の移動先 | 採用 |
