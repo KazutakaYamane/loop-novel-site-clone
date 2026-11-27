@@ -1,8 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import styles from "./SiteHeader.module.css";
 
-export function SiteHeader() {
+type Props = { actions?: ReactNode };
+
+export function SiteHeader({ actions }: Props) {
   return (
     <header className={styles.header}>
       <div className={styles.line1}>
@@ -17,8 +20,10 @@ export function SiteHeader() {
               priority
             />
           </Link>
-          {/* ログインの導線とログイン中の表示は後の issue がここに足す。見た目の比較はこの領域を隠して撮る */}
-          <div className={styles.actions} data-testid="header-actions" />
+          {/* ログインの導線とログイン中の表示を置く。既存のヘッダーの見た目の比較はこの領域を隠して撮る */}
+          <div className={styles.actions} data-testid="header-actions">
+            {actions}
+          </div>
         </div>
       </div>
       <nav className={styles.nav} aria-label="サイト内の移動">

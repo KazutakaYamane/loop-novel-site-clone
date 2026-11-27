@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-
 return [
 
     /*
@@ -127,10 +125,8 @@ return [
     |
     */
 
-    'cookie' => env(
-        'SESSION_COOKIE',
-        Str::slug((string) env('APP_NAME', 'laravel')).'-session'
-    ),
+    // frontend/lib/auth/ がこの名前で cookie の有無を見るので、APP_NAME から作らず固定する(docs/adr/0015)
+    'cookie' => env('SESSION_COOKIE', 'yomikaki_session'),
 
     /*
     |--------------------------------------------------------------------------

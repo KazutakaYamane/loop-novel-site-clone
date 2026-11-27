@@ -27,3 +27,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 見た目の値はカクヨムから採取して `docs/kakuyomu-reference/` に残し、そこから書く。カクヨムの CSS・画像・フォントをコピーしない。サイト名は「ヨミカキ」にし、「カクヨム」にしない(docs/adr/0012)。
 - 見た目の比較は、その issue で確定する要素を `expect(locator).toHaveScreenshot()` で要素単位で撮る。実行ごとに中身が変わる領域(一覧、ユーザー名、時刻)は `mask` で隠す。既存の基準画像は、issue の "Likely files" に `__screenshots__/` の中のパスで名指しされたものだけ撮り直してよい。それ以外は変えず、自分が足した部分の基準画像を新しいテストで足す(docs/adr/0016)。
 - ヘッダーの右側の操作(ログインの導線、ログイン中の表示)は `SiteHeader` の `data-testid="header-actions"` の領域に置く。
+- ブラウザから Laravel を呼ぶときは同じオリジンの `/api/*` を使い(`proxy.ts` が転送する)、更新の操作の前に `GET /api/csrf-token` のトークンを `X-CSRF-TOKEN` に付ける(`lib/auth/startDemo.ts`)。ログイン状態の cookie を JavaScript で読み書きしない(docs/adr/0015)。
