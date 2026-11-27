@@ -1,0 +1,227 @@
+[
+  {
+    "slug": "renairon",
+    "author_key": "sakaguchi-ango",
+    "card": "https://www.aozora.gr.jp/cards/001095/card42851.html",
+    "source": "https://www.aozora.gr.jp/cards/001095/files/42851_ruby_33485.zip",
+    "genre": "criticism",
+    "catchphrase": "恋とは何か。一生かけて探し続ける作家の答え。",
+    "introduction": "恋と愛という二つの言葉の違いから話を始め、昔の宣教師が「愛」の訳語に困った逸話や、自分の見聞きした恋の姿を引きながら、恋愛というものの正体に迫っていく評論。\n恋は人を満たさず、愚かさに満ちていると認めたうえで、それでも人生には欠かせないものとして、恋に向き合う姿勢を語る。",
+    "tags": [
+      "青空文庫",
+      "恋愛",
+      "評論"
+    ],
+    "published_at": "2026-11-26T21:00:00+09:00"
+  },
+  {
+    "slug": "yume-juya",
+    "author_key": "natsume-soseki",
+    "card": "https://www.aozora.gr.jp/cards/000148/card799.html",
+    "source": "https://www.aozora.gr.jp/cards/000148/files/799_ruby_6024.zip",
+    "genre": "action",
+    "catchphrase": "こんな夢を見た――で始まる、十の不思議な夜。",
+    "introduction": "百年待っていてほしいと言い残して死んでいく女。背負った子どもが急に重くなる夜道。運慶が仁王を彫るのを見物する人だかり。\n一夜ごとに違う夢が、短い話になって並ぶ。どの夜も、筋道は通っていないのに妙にはっきりとしていて、読み終えたあとまで目の奥に残る。",
+    "tags": [
+      "青空文庫",
+      "夢",
+      "連作"
+    ],
+    "published_at": "2026-11-26T20:00:00+09:00"
+  },
+  {
+    "slug": "toshishun",
+    "author_key": "akutagawa-ryunosuke",
+    "card": "https://www.aozora.gr.jp/cards/000879/card43015.html",
+    "source": "https://www.aozora.gr.jp/cards/000879/files/43015_ruby_17393.zip",
+    "genre": "fantasy",
+    "catchphrase": "一夜で大金持ち、次の朝には一文無し。若者は仙人を目指す。",
+    "introduction": "唐の都、洛陽。財産を使い果たした若者は、夕暮れの門の下で不思議な老人に出会い、言われたとおりに地面を掘って黄金を手に入れる。\nけれど贅沢が尽きるたびに人は離れていき、若者は人の心に愛想をつかす。老人に弟子入りを願った彼に課されたのは、峨眉山の頂で何が起きても声を出さないという試練だった。",
+    "tags": [
+      "青空文庫",
+      "仙人",
+      "中国"
+    ],
+    "published_at": "2026-11-26T19:00:00+09:00"
+  },
+  {
+    "slug": "aru-uchujin-no-himitsu",
+    "author_key": "unno-juza",
+    "card": "https://www.aozora.gr.jp/cards/000160/card866.html",
+    "source": "https://www.aozora.gr.jp/cards/000160/files/866_ruby_23838.zip",
+    "genre": "sf",
+    "catchphrase": "火星へ向かったロケットから、恩師の映像が届き続ける。",
+    "introduction": "テレビジョン研究所の若い教授は、三年前に姿を消した恩師、渋谷博士のことを思い返す。ある冬の夜、研究所にあった外国のロケットが突然空へ飛び立ち、翌朝、研究室の受像機に博士の顔が映った。\n火星を目指す博士の中継に世界中が熱狂するが、ロケットは途中で宇宙に止まってしまう。博士が選んだ最後の手段とは。",
+    "tags": [
+      "青空文庫",
+      "ロケット",
+      "火星"
+    ],
+    "published_at": "2026-11-26T18:00:00+09:00"
+  },
+  {
+    "slug": "kumo-no-ito",
+    "author_key": "akutagawa-ryunosuke",
+    "card": "https://www.aozora.gr.jp/cards/000879/card92.html",
+    "source": "https://www.aozora.gr.jp/cards/000879/files/92_ruby_164.zip",
+    "genre": "others",
+    "catchphrase": "地獄の底へ垂れた一本の銀色の糸。登れるのは誰か。",
+    "introduction": "ある朝、蓮の池のほとりを歩いていたお釈迦様は、はるか下の地獄で苦しむ大泥棒の姿を目にとめる。悪事ばかり重ねてきた男にも、小さな命を一度だけ見逃した過去があった。\nお釈迦様が下ろした細い糸を、男は必死にたぐり上っていく。けれど振り返ると、後ろには同じ糸にすがる罪人たちの長い列が続いていた。",
+    "tags": [
+      "青空文庫",
+      "童話",
+      "仏教説話"
+    ],
+    "published_at": "2026-11-26T17:00:00+09:00"
+  },
+  {
+    "slug": "chumon-no-oi-ryoriten",
+    "author_key": "miyazawa-kenji",
+    "card": "https://www.aozora.gr.jp/cards/000081/card43754.html",
+    "source": "https://www.aozora.gr.jp/cards/000081/files/43754_ruby_17594.zip",
+    "genre": "horror",
+    "catchphrase": "山奥の西洋料理店。扉を開けるたび、注文が増えていく。",
+    "introduction": "狩りに来た二人の若い紳士は、案内人とはぐれ、連れてきた犬も失って山の中をさまよう。腹をすかせた二人の前に、立派な西洋料理店が現れた。\n戸口ごとに書かれた「注文」に従って、二人は髪を整え、持ち物を置き、体に何かを塗っていく。どの注文も自分たちのためだと思いこんだまま、奥へ奥へと進んでいく。",
+    "tags": [
+      "青空文庫",
+      "童話",
+      "山"
+    ],
+    "published_at": "2026-11-26T16:00:00+09:00"
+  },
+  {
+    "slug": "hashire-merosu",
+    "author_key": "dazai-osamu",
+    "card": "https://www.aozora.gr.jp/cards/000035/card1567.html",
+    "source": "https://www.aozora.gr.jp/cards/000035/files/1567_ruby_4948.zip",
+    "genre": "drama",
+    "catchphrase": "友の命を預けて三日。間に合わなければ、身代わりが死ぬ。",
+    "introduction": "妹の婚礼の支度で町に出た羊飼いのメロスは、人を信じられなくなった王が次々に人を処刑していると聞き、城へ乗りこんで捕らえられる。\n妹の式を挙げるために三日の猶予を願い、親友を人質に残して村へ走る。帰り道には濁流と山賊と、自分自身の弱さが待ち受けていた。",
+    "tags": [
+      "青空文庫",
+      "友情",
+      "信頼"
+    ],
+    "published_at": "2026-11-26T15:00:00+09:00"
+  },
+  {
+    "slug": "sangetsuki",
+    "author_key": "nakajima-atsushi",
+    "card": "https://www.aozora.gr.jp/cards/000119/card624.html",
+    "source": "https://www.aozora.gr.jp/cards/000119/files/624_ruby_5668.zip",
+    "genre": "history",
+    "catchphrase": "詩人になれなかった男は、ある夜、虎になった。",
+    "introduction": "若くして役人の試験に合格した李徴は、詩で名を残そうと職を退く。しかし思うように名は上がらず、生活のために再び勤めに戻ったあと、旅先で姿を消す。\n一年後、旧友の袁傪が山道で人食い虎に襲われかける。草むらから聞こえてきたのは、なつかしい友の声だった。",
+    "tags": [
+      "青空文庫",
+      "中国",
+      "変身"
+    ],
+    "published_at": "2026-11-26T14:00:00+09:00"
+  },
+  {
+    "slug": "binzume-jigoku",
+    "author_key": "yumeno-kyusaku",
+    "card": "https://www.aozora.gr.jp/cards/000096/card2381.html",
+    "source": "https://www.aozora.gr.jp/cards/000096/files/2381_ruby_727.zip",
+    "genre": "mystery",
+    "catchphrase": "浜に流れ着いた三本の瓶。中の手紙が語る、無人島の年月。",
+    "introduction": "ある島の役場から、海洋研究所に三本の瓶が届けられる。それぞれの瓶には、無人島に流れ着いた幼い兄と妹が書いた手紙が入っていた。\n救いを待つ日々の記録、成長するにつれて増えていく苦しみ、そしてたどたどしい救助の願い。瓶を開ける順番によって、手紙はまったく違う顔を見せる。",
+    "tags": [
+      "青空文庫",
+      "手紙",
+      "無人島"
+    ],
+    "published_at": "2026-11-26T13:00:00+09:00"
+  },
+  {
+    "slug": "remon",
+    "author_key": "kajii-motojiro",
+    "card": "https://www.aozora.gr.jp/cards/000074/card424.html",
+    "source": "https://www.aozora.gr.jp/cards/000074/files/424_ruby_19825.zip",
+    "genre": "drama",
+    "catchphrase": "得体の知れない憂鬱を抱えて、果物屋で一つの檸檬を買う。",
+    "introduction": "病と借金と、名前のつけようのない憂鬱に押さえつけられて、「私」は京都の街をあてもなく歩き回る。以前は好きだった本屋の書棚さえ、いまは重苦しく感じられる。\nふと立ち寄った果物屋で、檸檬を一つ手に取る。その冷たさと色と重さが、沈んでいた気分を少しずつ持ち上げていく。",
+    "tags": [
+      "青空文庫",
+      "京都",
+      "散歩"
+    ],
+    "published_at": "2026-11-26T12:00:00+09:00"
+  },
+  {
+    "slug": "gekashitsu",
+    "author_key": "izumi-kyoka",
+    "card": "https://www.aozora.gr.jp/cards/000050/card360.html",
+    "source": "https://www.aozora.gr.jp/cards/000050/files/360_ruby_434.zip",
+    "genre": "love_story",
+    "catchphrase": "麻酔を拒む伯爵夫人。胸の奥の秘密を、うわごとで話さないために。",
+    "introduction": "貴船伯爵夫人の手術の日、病院の廊下には身分の高い人々が集まっていた。ところが夫人は、眠り薬を使えば心の秘密を口にしてしまうと言って、麻酔をかたく拒む。\n執刀する医学士の高峰は、そのまま刀を取る。二人の間には、九年前のある春の日に、植物園ですれ違ったという、ただそれだけのつながりがあった。",
+    "tags": [
+      "青空文庫",
+      "病院",
+      "明治"
+    ],
+    "published_at": "2026-11-26T11:00:00+09:00"
+  },
+  {
+    "slug": "tebukuro-wo-kaini",
+    "author_key": "niimi-nankichi",
+    "card": "https://www.aozora.gr.jp/cards/000121/card637.html",
+    "source": "https://www.aozora.gr.jp/cards/000121/files/637_ruby_4095.zip",
+    "genre": "others",
+    "catchphrase": "子狐がひとりで町へ。冷たい手を温める手袋を買いに。",
+    "introduction": "雪の積もった朝、森の子狐は冷たくなった手を母さん狐に差し出す。坊やに手袋をはめさせてやりたいと考えた母さん狐だったが、昔の恐ろしい思い出がよみがえって町へ近づけない。\n片方の手だけを人の子の手に変えてもらった子狐は、銅貨を握りしめ、ひとりで夜の町の帽子屋をたずねていく。",
+    "tags": [
+      "青空文庫",
+      "童話",
+      "冬"
+    ],
+    "published_at": "2026-11-26T10:00:00+09:00"
+  },
+  {
+    "slug": "sakura-no-mori",
+    "author_key": "sakaguchi-ango",
+    "card": "https://www.aozora.gr.jp/cards/001095/card42618.html",
+    "source": "https://www.aozora.gr.jp/cards/001095/files/42618_ruby_21052.zip",
+    "genre": "horror",
+    "catchphrase": "満開の桜の下を通る者は、みな気が変になるという。",
+    "introduction": "鈴鹿の峠に住む山賊は、旅人を襲っては奪い、気に入った女を何人も妻にしてきた。ただ一つ、満開の桜の森の下を通るときだけは、言いようのない恐ろしさに襲われる。\nある日さらってきた美しい女は、ほかの妻たちを殺せと命じ、やがて都で暮らしたいと言い出す。山賊は女の望みに従い続けるが、その望みには終わりがなかった。",
+    "tags": [
+      "青空文庫",
+      "桜",
+      "説話"
+    ],
+    "published_at": "2026-11-26T09:00:00+09:00"
+  },
+  {
+    "slug": "yodaka-no-hoshi",
+    "author_key": "miyazawa-kenji",
+    "card": "https://www.aozora.gr.jp/cards/000081/card473.html",
+    "source": "https://www.aozora.gr.jp/cards/000081/files/473_ruby_467.zip",
+    "genre": "others",
+    "catchphrase": "姿をさげすまれた鳥は、夜空の向こうへ飛び続ける。",
+    "introduction": "みにくいと言われ、ほかの鳥たちに嫌われているよだか。鷹からは名前を変えろと迫られ、期限までに従わなければ命はないと脅される。\n虫を食べて生きる自分の暮らしにも胸を痛めたよだかは、遠くへ行く決心をする。太陽へ、星々へと願いながら、よだかは高く高く昇っていく。",
+    "tags": [
+      "青空文庫",
+      "童話",
+      "星"
+    ],
+    "published_at": "2026-11-26T08:00:00+09:00"
+  },
+  {
+    "slug": "chawan-no-yu",
+    "author_key": "terada-torahiko",
+    "card": "https://www.aozora.gr.jp/cards/000042/card2363.html",
+    "source": "https://www.aozora.gr.jp/cards/000042/files/2363_ruby_4700.zip",
+    "genre": "nonfiction",
+    "catchphrase": "一杯のお湯から、雲も風も季節風も見えてくる。",
+    "introduction": "茶わんに注いだ熱いお湯を、じっくりと観察してみる。立ちのぼる白い湯げ、表面に浮かぶ模様、渦を巻いてのぼる流れ。\nその一つひとつを、雲のでき方、夕立、海から陸へ吹く風、季節ごとの大きな風の流れにつなげて、身近な不思議から自然の仕組みへと案内する、子ども向けの科学の話。",
+    "tags": [
+      "青空文庫",
+      "科学",
+      "随筆"
+    ],
+    "published_at": "2026-11-26T07:00:00+09:00"
+  }
+]

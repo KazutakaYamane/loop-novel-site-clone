@@ -1,25 +1,18 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use App\Seed\Aozora\SeedAozoraWorks;
+use App\Seed\Aozora\SeedDirectory;
 use Illuminate\Database\Seeder;
 
+// 開発・E2E・CI の DB に入れるシード。scripts/worktree-setup.sh がマイグレーションの後に実行する(docs/adr/0030)
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
-    public function run(): void
+    public function run(SeedAozoraWorks $seed): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $seed->handle(new SeedDirectory(database_path('data/aozora')));
     }
 }
