@@ -15,6 +15,10 @@ For local test/lint/build commands (including the Red step), prefix the command 
 4. Fix each selected finding test-first: write a test that reproduces it and fails for that reason, then make it pass. Tag the test with the AC ID it relates to, if any. Run the tests locally and commit passing fixes on this branch. Leave all pushes and PR operations to the orchestrator.
 5. Write a report to `${REVIEW_REPORT}` with every finding, severity, verdict and disposition. Record a clean review explicitly. Update `${PR_BODY}` if fixes change coverage or the description.
 
+Existing tests the human approved for this issue (one per line, empty means none):
+${LOOP_APPROVED_TESTS}
+If the diff changes any of them, check that each change matches the approved request in the issue comments and does not weaken an assertion beyond it; treat a mismatch as an `important` finding.
+
 If a selected finding cannot be fixed without something listed under "Changes that need a human", or it shows that the issue's acceptance criteria are wrong, escalate as AGENTS.md says instead of fixing it.
 
 End your final message with exactly one line:

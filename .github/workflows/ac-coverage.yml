@@ -79,7 +79,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # PR が閉じる issue の "Likely files" を読む(名指しされた見た目の基準画像だけ変更を認める)
+    # PR が閉じる issue の "Likely files" と、オーナーの承認のコメントを読む(名指しされた基準画像と、承認された既存テストだけ変更を認める)
     permissions:
       contents: read
       issues: read
@@ -92,6 +92,7 @@ jobs:
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           GH_TOKEN: ${{ github.token }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           git fetch --no-tags origin "$BASE_REF"
           dest="$RUNNER_TEMP/guard"
@@ -106,6 +107,8 @@ jobs:
           issue="$(printf '%s\n' "$PR_BODY" | grep -ioE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) +#[0-9]+' | head -n 1 | grep -oE '[0-9]+$' || true)"
           if [ -n "$issue" ]; then
             gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/guard-issue-body.md"
-            issue_args=(--issue-body-file "$RUNNER_TEMP/guard-issue-body.md")
+            gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json comments > "$RUNNER_TEMP/guard-issue-comments.json"
+            issue_args=(--issue-body-file "$RUNNER_TEMP/guard-issue-body.md" --issue-comments-file "$RUNNER_TEMP/guard-issue-comments.json")
           fi
-          python3 "$dest/guard.py" --base "origin/$BASE_REF" "${issue_args[@]}"
+          # ループは GitHub App で動く。既存テストの変更は、オーナーが書いた承認のコメントだけで開く(docs/adr/0018)
+          python3 "$dest/guard.py" --base "origin/$BASE_REF" --approver "$REPO_OWNER" "${issue_args[@]}"

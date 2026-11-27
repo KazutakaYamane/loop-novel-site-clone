@@ -1,0 +1,5 @@
+#!/bin/sh
+# ループの中の gh。GitHub App のトークン(1 時間で切れる)を呼ぶたびに確かめて、本物の gh に渡す(docs/adr/0018)。
+# run.sh がこのディレクトリを PATH の先頭に置き、本物の gh を LOOP_REAL_GH に入れる
+token="$(python3 -I "$(dirname "$0")/../app_token.py" token)" || exit 1
+GH_TOKEN="$token" exec "${LOOP_REAL_GH:?run.sh sets LOOP_REAL_GH}" "$@"

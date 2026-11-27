@@ -27,5 +27,40 @@ class OverlapTest(unittest.TestCase):
         self.assertTrue(issues.conflicts(["backend/routes/**"], ["backend/routes/web.php"]))
 
 
+class ApprovalTest(unittest.TestCase):
+    REQUEST = ("4. 次の既存テストを変える承認をお願いします。\n\n" + issues.TEST_CHANGE_REQUEST + "\n"
+               "- `backend/tests/Feature/Auth/DemoSessionTest.php`: 保存名の完全一致をやめる\n"
+               "- `e2e/tests/login.spec.ts`: デモ読者で確かめる\n\n以上です。\n- `not/listed.ts`\n")
+
+    def test_the_latest_request_lists_the_paths_and_reasons(self):
+        comments = [{"body": issues.TEST_CHANGE_REQUEST + "\n- `old/OldTest.php`\n"}, {"body": "途中経過"}, {"body": self.REQUEST}]
+        self.assertEqual(issues.latest_request(comments), [
+            ("backend/tests/Feature/Auth/DemoSessionTest.php", "保存名の完全一致をやめる"),
+            ("e2e/tests/login.spec.ts", "デモ読者で確かめる")])
+
+    def test_only_the_owners_approval_comment_counts(self):
+        # ループは bot のアカウントで動くので、ループが同じ形のコメントを書いても承認にならない
+        body = issues.approval_comment([("e2e/tests/login.spec.ts", "デモ読者で確かめる")])
+        comments = [{"author": {"login": "loop-bot"}, "body": issues.approval_comment([("e2e/tests/other.spec.ts", "")])},
+                    {"author": {"login": "Owner"}, "body": body},
+                    {"author": {"login": "owner"}, "body": "- `e2e/tests/plain.spec.ts`"}]
+        self.assertEqual(issues.approved_tests(comments, "owner"), ["e2e/tests/login.spec.ts"])
+        self.assertEqual(issues.approved_tests(comments, ""), [])
+
+    def test_the_approval_reads_the_same_as_the_ci_guard(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / ".github/scripts"))
+        import guard  # noqa: E402
+        self.assertEqual(guard.APPROVAL_MARK, issues.APPROVAL_MARK)
+        comments = [{"author": {"login": "owner"},
+                     "body": issues.approval_comment([("e2e/tests/a.spec.ts", "理由: x"), ("backend/tests/Feature/BTest.php", "")])}]
+        self.assertEqual(guard.approved_tests(comments, "owner"), issues.approved_tests(comments, "owner"))
+
+    def test_only_test_case_files_can_be_approved(self):
+        self.assertTrue(issues.is_test_case_file("backend/tests/Feature/Auth/DemoSessionTest.php"))
+        self.assertTrue(issues.is_test_case_file("e2e/tests/login.spec.ts"))
+        for path in ["backend/tests/Arch/ArchTest.php", "backend/tests/Pest.php", "e2e/tests/helpers.ts", "backend/app/User.php"]:
+            self.assertFalse(issues.is_test_case_file(path), path)
+
+
 if __name__ == "__main__":
     unittest.main()
