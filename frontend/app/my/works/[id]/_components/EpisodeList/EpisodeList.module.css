@@ -1,0 +1,95 @@
+/* 行の組み方はワークスペースの小説一覧(docs/kakuyomu-reference/works.md)に合わせた */
+.section {
+  margin-top: 32px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.heading {
+  font-size: 16.8px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.create {
+  padding: 8px 10px;
+  border: 1px solid #0990cc;
+  border-radius: 3px;
+  color: var(--color-surface);
+  background: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.empty {
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-weak);
+  font-size: 14px;
+}
+
+.list {
+  border-bottom: 1px solid var(--color-border);
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.status {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.draft {
+  color: var(--color-text);
+  background: #ecd5b3;
+}
+
+.published {
+  color: var(--color-surface);
+  background: var(--color-accent);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.date {
+  flex: none;
+  color: #999;
+  font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .item {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 13px;
+  }
+
+  .date {
+    width: 100%;
+  }
+}

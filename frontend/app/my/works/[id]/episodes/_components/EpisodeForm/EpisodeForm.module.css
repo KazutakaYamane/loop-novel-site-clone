@@ -1,0 +1,112 @@
+/* 入力欄とボタンの値は docs/kakuyomu-reference/works.md の「小説の設定」から採った */
+.form {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+.saved {
+  flex: 1;
+  color: var(--color-text-weak);
+  font-size: 12px;
+}
+
+.draft,
+.publish {
+  padding: 6px 10px;
+  border-radius: 3px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.draft {
+  border: 1px solid #bbb;
+  color: var(--color-text);
+  background: #ddd;
+}
+
+.publish {
+  border: 1px solid #0990cc;
+  color: var(--color-surface);
+  background: var(--color-accent);
+}
+
+.draft:disabled,
+.publish:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.title,
+.body {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 2px solid #ccc;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 16px;
+}
+
+.title {
+  line-height: 18px;
+}
+
+.body {
+  height: 480px;
+  line-height: 1.8;
+  resize: vertical;
+}
+
+.title[aria-invalid="true"],
+.body[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.counter {
+  padding: 5px 0;
+  color: #999;
+  font-size: 14px;
+  line-height: 21px;
+  text-align: right;
+}
+
+@media (max-width: 767px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .saved {
+    width: 100%;
+    flex: none;
+  }
+
+  .body {
+    height: 320px;
+  }
+
+  .counter {
+    font-size: 12px;
+  }
+}

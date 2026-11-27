@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { findWritingPath } from "@/lib/api/myEpisodes";
 import { navigateTo } from "@/lib/navigation";
 import { startDemo, type DemoRole } from "@/lib/auth/startDemo";
 import styles from "./DemoLoginButtons.module.css";
@@ -23,8 +24,8 @@ export function DemoLoginButtons({ variant = "page" }: Props) {
     setFailure(null);
     const result = await startDemo(role);
     if (result === true) {
-      // デモ作者の移動先(執筆の画面)は #124 で決める。それまではどちらもトップへ移動する
-      navigateTo("/");
+      // デモ作者は初期の作品の下書きの執筆の画面へ、デモ読者はトップへ移動する(AC-F2-5、AC-F2-6)
+      navigateTo(role === "author" ? await findWritingPath() : "/");
       return;
     }
     setPending(false);
