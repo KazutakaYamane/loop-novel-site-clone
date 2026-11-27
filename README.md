@@ -47,6 +47,8 @@ docker compose exec app php artisan migrate
 
 Next.js は `next dev` で、Laravel は php-fpm + nginx で動き、どちらもソースの変更がすぐに反映される。
 
+トップからデモ作者として始めると、執筆画面の URL `/my/works/<作品ID>/episodes/<話ID>/edit` に移る。ブラウザで `/works/<作品ID>` を開くと、読者向けの作品ページから公開済みの話を読める。下書きはワークスペースの執筆画面で読む。
+
 アプリのログは 1 行 1 件の JSON で出る(docs/adr/0014)。Laravel は stderr に Monolog の形(`level_name`、`message`、`context`、`datetime`)で、Next.js のサーバー側は `frontend/lib/logger.ts` から `level`、`message`、`time`、`context` の形で出す。
 
 ```bash

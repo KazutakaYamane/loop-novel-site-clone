@@ -1,0 +1,26 @@
+/* 値は docs/kakuyomu-reference/reading-preview.md の「本文とタイトル」から採った。
+   入力の各行を 1 段落として扱い、空行も 1 行分を占めるので pre-wrap で入力どおりに出す */
+.body {
+  padding: 60px 80px 110px;
+  color: var(--color-text);
+  font-family:
+    "Yu Mincho", YuMincho, "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Noto Serif CJK JP", serif;
+  font-size: 17.5px;
+  line-height: 31.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* pre-wrap だけでは末尾の改行に続く空行が高さを持たない。 */
+.body::after {
+  content: "";
+  display: inline-block;
+}
+
+@media (max-width: 767px) {
+  .body {
+    padding: 60px 20px 110px;
+    font-size: 16px;
+    line-height: 28.8px;
+  }
+}

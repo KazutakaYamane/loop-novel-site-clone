@@ -1,0 +1,174 @@
+/* 値は docs/kakuyomu-reference/public-work.md の「作品トップ」から採った */
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 745px) minmax(280px, 420px);
+  justify-content: center;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  flex: 1;
+  margin: 0 auto;
+  overflow-wrap: anywhere;
+}
+
+.primary {
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+}
+
+.heading {
+  padding: 64px 32px 24px;
+}
+
+.band {
+  display: block;
+  width: 40px;
+  height: 10px;
+  margin-bottom: 16px;
+  background: var(--color-text);
+}
+
+.heading h1 {
+  color: var(--color-text);
+  font-size: 35px;
+  font-weight: 700;
+  line-height: 45.5px;
+}
+
+.author {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.introduction {
+  margin: 0 32px;
+  padding: 24px 0 64px;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+  line-height: 25.2px;
+}
+
+.catchphrase {
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.introductionText {
+  white-space: pre-wrap;
+}
+
+.details {
+  margin: 0 32px 64px;
+}
+
+.details h2,
+.contents h2 {
+  margin-bottom: 8px;
+  color: var(--color-text-weak);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.details dl {
+  width: 325px;
+  max-width: 100%;
+}
+
+.details dl > div {
+  display: grid;
+  grid-template-columns: 134px 1fr;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+  line-height: 16.8px;
+}
+
+.details dt {
+  color: var(--color-text-weak);
+}
+
+.tags,
+.ratings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  list-style: none;
+}
+
+.contents {
+  padding: 20px 16px 64px;
+}
+
+.contents h2 {
+  padding: 0 16px;
+}
+
+.contents ol {
+  padding: 0 16px;
+  list-style: none;
+  background: var(--color-footer-background);
+}
+
+.contents li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.contents a {
+  display: flex;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px 0;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 16.8px;
+}
+
+.contents a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 767px) {
+  .main {
+    grid-template-columns: 100%;
+  }
+
+  .primary {
+    border-right: 0;
+  }
+
+  .heading {
+    padding: 16px 16px 16px;
+  }
+
+  .band {
+    margin-bottom: 10px;
+  }
+
+  .heading h1 {
+    font-size: 18px;
+    line-height: 23.4px;
+  }
+
+  .introduction {
+    margin: 0 16px;
+    padding: 16px 0;
+  }
+
+  .details {
+    margin: 0 16px 16px;
+  }
+
+  .details dl {
+    width: 380px;
+  }
+
+  .details dl > div {
+    grid-template-columns: 158px 1fr;
+  }
+
+  .contents {
+    padding: 16px 0 48px;
+  }
+}

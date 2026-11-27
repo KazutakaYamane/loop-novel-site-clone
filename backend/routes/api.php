@@ -10,6 +10,8 @@ use App\Http\Controllers\GenreController;
 use App\Http\Controllers\My\EpisodeController;
 use App\Http\Controllers\My\EpisodePublicationController;
 use App\Http\Controllers\My\WorkController;
+use App\Http\Controllers\Public\PublicEpisodeController;
+use App\Http\Controllers\Public\PublicWorkController;
 use App\Providers\EpisodeRateLimitServiceProvider;
 use Illuminate\Support\Facades\Route;
 
@@ -27,3 +29,6 @@ Route::middleware('auth')->prefix('my')->group(function () {
         Route::post('works/{work}/episodes/{episode}/publication', [EpisodePublicationController::class, 'store'])->scopeBindings();
     });
 });
+
+Route::get('/works/{work}', [PublicWorkController::class, 'show'])->whereNumber('work');
+Route::get('/works/{work}/episodes/{episode}', [PublicEpisodeController::class, 'show'])->whereNumber(['work', 'episode']);
