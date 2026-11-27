@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { CurrentUser } from "@/lib/auth/currentUser";
 import { DemoLoginButtons } from "../DemoLoginButtons/DemoLoginButtons";
+import { LayoutLink } from "../LayoutLink/LayoutLink";
 import styles from "./HeaderActions.module.css";
 import { LogoutButton } from "./LogoutButton";
 
@@ -10,9 +10,9 @@ export function HeaderActions({ user }: Props) {
   if (user === null) {
     return (
       <>
-        <Link href="/login" className={`${styles.link} ${styles.login}`}>
+        <LayoutLink href="/login" className={`${styles.link} ${styles.login}`}>
           ログイン
-        </Link>
+        </LayoutLink>
         <DemoLoginButtons variant="header" />
       </>
     );

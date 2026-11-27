@@ -143,3 +143,26 @@ test("a tab showing the expiry notice recognizes a demo restarted in another tab
     }
   },
 );
+
+test("selecting home while already on the reader home page detects an expired session",
+  { tag: "@AC-F9-4" }, async ({ page, browser, baseURL }) => {
+    await page.goto("/");
+    await page.getByRole("main").getByRole("button", { name: "デモ読者として始める" }).click();
+    const header = page.getByRole("banner");
+    await expect(header.getByTestId("current-user")).toBeVisible();
+
+    const other = await newClient(browser, baseURL, uniqueClientAddress());
+    try {
+      await other.addCookies(await page.context().cookies());
+      const logoutPage = await other.newPage();
+      await logoutPage.goto("/");
+      await logoutPage.getByRole("banner").getByRole("button", { name: "ログアウト" }).click();
+      await expect(logoutPage.getByRole("banner").getByRole("link", { name: "ログイン" })).toBeVisible();
+
+      await header.getByRole("link", { name: "ヨミカキ" }).click();
+      await expect(page.getByRole("link", { name: "デモを始め直す" })).toBeVisible();
+      await expect(header.getByTestId("current-user")).toHaveCount(0);
+    } finally {
+      await other.close();
+    }
+  });
