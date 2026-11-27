@@ -36,6 +36,7 @@
 }
 
 .header {
+  position: relative;
   flex-wrap: nowrap;
   font-size: 12.6px;
 }
@@ -50,8 +51,19 @@
   padding: 0 16px;
 }
 
+/* ヘッダーの高さに収まらないので、ボタンの下に重ねて出す。カクヨムに同じ案内は無いため、色と線は既存の変数を使う */
 .header .error {
-  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 15%);
+  line-height: 1.6;
 }
 
 .page {

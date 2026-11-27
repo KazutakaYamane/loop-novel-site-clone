@@ -8,5 +8,5 @@ use App\Http\Controllers\Auth\DemoSessionController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/csrf-token', [CsrfTokenController::class, 'show']);
-Route::post('/demo-sessions', [DemoSessionController::class, 'store']);
+Route::post('/demo-sessions', [DemoSessionController::class, 'store'])->middleware('throttle:demo-login');
 Route::get('/user', [CurrentUserController::class, 'show'])->middleware('auth');

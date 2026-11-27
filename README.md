@@ -71,13 +71,17 @@ docker compose exec web npx vitest run
 docker compose exec web npx eslint . --max-warnings=0
 docker compose exec web sh -c 'npx next typegen && npx tsc --noEmit'
 
+# E2E と見た目の比較は scripts/e2e.sh で動かす。先に Laravel のキャッシュを消し、
+# デモログインの IP ごとの回数(1 時間 10 回)が前の実行から残らないようにする(docs/adr/0017)。
+# 引数は e2e サービスの中の playwright test にそのまま渡す
+
 # e2e: Playwright(機能の E2E)。動画とスクリーンショットは e2e/test-results/ に出る
-docker compose run --rm e2e npx playwright test --project=dev
+scripts/e2e.sh --project=dev
 
 # visual: 見た目の比較
-docker compose run --rm e2e npx playwright test --project=visual-pc --project=visual-sp
+scripts/e2e.sh --project=visual-pc --project=visual-sp
 # 新しい画面の基準画像を作る(必ずこのコンテナの中で作る)
-docker compose run --rm e2e npx playwright test --project=visual-pc --project=visual-sp --update-snapshots
+scripts/e2e.sh --project=visual-pc --project=visual-sp --update-snapshots
 
 # mutation: Infection と Stryker(手元では全体にかかる。CI は PR が変えた行だけ)
 docker compose exec app sh -c 'XDEBUG_MODE=coverage vendor/bin/infection --threads=4 --with-uncovered'
