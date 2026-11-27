@@ -8,6 +8,8 @@ use App\Enums\Genre;
 use App\Enums\SerialStatus;
 use Database\Factories\WorkFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property int $user_id
+ * @property-read User $user
  * @property string $title
  * @property string|null $catchphrase
  * @property string|null $introduction
@@ -55,6 +58,19 @@ class Work extends Model
     public function episodes(): HasMany
     {
         return $this->hasMany(Episode::class)->orderBy('id');
+    }
+
+    /** @return HasMany<Episode, $this> */
+    public function publishedEpisodes(): HasMany
+    {
+        return $this->episodes()->published();
+    }
+
+    /** @param Builder<Work> $query */
+    #[Scope]
+    protected function published(Builder $query): void
+    {
+        $query->whereHas('publishedEpisodes');
     }
 
     /**

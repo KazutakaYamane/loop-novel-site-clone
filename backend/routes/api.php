@@ -10,6 +10,8 @@ use App\Http\Controllers\GenreController;
 use App\Http\Controllers\My\EpisodeController;
 use App\Http\Controllers\My\EpisodePublicationController;
 use App\Http\Controllers\My\WorkController;
+use App\Http\Controllers\Public\PublicEpisodeController;
+use App\Http\Controllers\Public\PublicWorkController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/csrf-token', [CsrfTokenController::class, 'show']);
@@ -22,3 +24,6 @@ Route::middleware('auth')->prefix('my')->group(function () {
     Route::apiResource('works.episodes', EpisodeController::class)->scoped()->only(['index', 'store', 'show', 'update']);
     Route::post('works/{work}/episodes/{episode}/publication', [EpisodePublicationController::class, 'store'])->scopeBindings();
 });
+
+Route::get('/works/{work}', [PublicWorkController::class, 'show'])->whereNumber('work');
+Route::get('/works/{work}/episodes/{episode}', [PublicEpisodeController::class, 'show'])->whereNumber(['work', 'episode']);
