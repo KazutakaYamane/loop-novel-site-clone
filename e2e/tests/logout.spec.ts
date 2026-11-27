@@ -35,7 +35,8 @@ test("after logging out, the workspace can no longer be opened", { tag: "@AC-F1-
 test("a logout from another site is rejected and keeps the user logged in", { tag: "@AC-F1-1" }, async ({ page }) => {
   await startAsDemoReader(page);
 
-  for (const headers of [{}, { "X-CSRF-TOKEN": "forged" }, { Origin: "https://evil.example" }]) {
+  const forgedHeaders: Record<string, string>[] = [{}, { "X-CSRF-TOKEN": "forged" }, { Origin: "https://evil.example" }];
+  for (const headers of forgedHeaders) {
     const forged = await page.request.delete("/api/session", { headers: { Accept: "application/json", ...headers } });
 
     expect(forged.status()).toBe(419);
