@@ -155,3 +155,15 @@ test('the settings must include the tags, even when there are none', function ()
         ->assertUnprocessable()
         ->assertJsonValidationErrorFor('tags');
 })->group('AC-F3-2');
+
+// distinct は文字列が完全に一致するタグだけを同じとみなす。DB の一意の制約も同じ基準でないと、保存が 500 で落ちる
+test('tags that differ only in letter case or kana are kept as different tags', function () {
+    $user = User::factory()->create();
+    $work = Work::factory()->for($user)->create();
+
+    $this->actingAs($user)->putJson("/api/my/works/{$work->id}", workSettings(['tags' => ['SF', 'sf', 'ファンタジー', 'ふぁんたじー']]))
+        ->assertOk()
+        ->assertJson(['tags' => ['SF', 'sf', 'ファンタジー', 'ふぁんたじー']]);
+
+    expect($work->tags()->pluck('name')->all())->toBe(['SF', 'sf', 'ファンタジー', 'ふぁんたじー']);
+})->group('AC-F3-2');

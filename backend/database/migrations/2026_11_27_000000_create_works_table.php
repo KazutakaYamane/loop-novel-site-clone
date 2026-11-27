@@ -29,7 +29,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('work_id')->constrained()->cascadeOnDelete();
             $table->unsignedTinyInteger('position');
-            $table->string('name', 20);
+            // 同じタグかどうかは確かめ(distinct)と同じく文字列の完全な一致で決める。既定の照合順序では大文字と小文字、ひらがなとカタカナが同じになり、一意の制約で保存が落ちる
+            $table->string('name', 20)->collation('utf8mb4_bin');
 
             $table->unique(['work_id', 'position']);
             $table->unique(['work_id', 'name']);
