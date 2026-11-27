@@ -34,3 +34,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - ブラウザが送った `X-User-IP` は `proxy.ts` が捨て、`lib/clientIp/` が決めた利用者の IP に置き換える。Laravel を呼ぶ経路を足すときも、利用者の IP をブラウザのヘッダーから直接取らない(docs/adr/0017)。
 - ログインが必要な画面は `app/my/` の下に置き、`app/my/layout.tsx` の `LoginGate` を通す。ゲストはログイン画面へ移る。画面で確かめるのは表示のためで、データは Laravel の `auth` で守る(docs/adr/0018)。
 - ブラウザから Laravel の更新の操作を呼ぶときは、`lib/api/csrfToken.ts` の `fetchCsrfToken()` でトークンを取る(docs/adr/0015)。
+- `page.tsx` は default と `metadata` だけを export する。cookie を付けて Laravel から読むページは、読む部分を `_components/` の async な部品にして、ページの中の `Suspense` で包む。`app/my/layout.tsx` の `Suspense` だけでは、画面を移るときに Next.js が「uncached data」のエラーを出す。
+- Laravel の確かめのエラー(422 の `errors`)は、項目の下に `app/my/works/_components/FieldError/` で出し、入力欄と `aria-describedby`・`aria-invalid` で結ぶ。上限を超えた入力を `maxlength` で止めない(docs/adr/0019)。

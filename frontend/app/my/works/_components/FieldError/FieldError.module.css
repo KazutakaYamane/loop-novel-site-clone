@@ -1,0 +1,6 @@
+.error {
+  margin-top: 4px;
+  color: var(--color-error);
+  font-size: 13px;
+  line-height: 1.6;
+}

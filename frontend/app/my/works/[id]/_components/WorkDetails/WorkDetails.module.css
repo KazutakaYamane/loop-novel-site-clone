@@ -1,0 +1,58 @@
+/* 項目名と値の組み方は docs/kakuyomu-reference/works.md の「小説の設定」に合わせる */
+.details {
+  display: grid;
+  grid-template-columns: 165px minmax(0, 1fr);
+  margin-bottom: 16px;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.details dt,
+.details dd {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.details dt {
+  font-weight: 700;
+}
+
+.details dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.introduction {
+  white-space: pre-wrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+}
+
+.chip {
+  padding: 0 8px;
+  border-radius: 3px;
+  background: #eae9e8;
+  font-size: 13px;
+}
+
+@media (max-width: 767px) {
+  .details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .details dt {
+    padding-bottom: 0;
+    border-bottom: 0;
+    font-size: 13px;
+  }
+
+  .details dd {
+    padding-top: 4px;
+  }
+}
