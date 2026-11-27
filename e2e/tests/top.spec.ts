@@ -55,3 +55,13 @@ test("choosing a work in the new arrivals opens its work page", { tag: "@AC-F7-2
   await expect(guestPage.getByRole("heading", { level: 1, name: title })).toBeVisible();
   await guest.close();
 });
+
+test("the mobile footer has a whole-pixel height when its notice wraps", async ({ page }) => {
+  await page.setViewportSize({ width: 412, height: 839 });
+  await page.goto("/");
+
+  const footer = page.getByRole("contentinfo");
+  await expect(footer.getByText("© ヨミカキ")).toBeVisible();
+  const height = await footer.evaluate((element) => element.getBoundingClientRect().height);
+  expect(height % 1, `mobile footer height: ${height}px`).toBe(0);
+});
