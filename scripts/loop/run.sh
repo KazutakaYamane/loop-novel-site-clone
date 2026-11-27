@@ -180,6 +180,10 @@ PY
       limit*)
         read -r _ resets new_sid <<<"$state"
         [ -z "${new_sid:-}" ] || sid=$new_sid
+        if [ "${work_provider:-}" = mixed ]; then
+          printf '%s\n' "$((resets + 60))" >"$base.reset"
+          mv -f "$base.reset" "$STATE_DIR/mixed-limited-until-$LOOP_AGENT"
+        fi
         if [ "$LOOP_AGENT" = codex ] && [ -z "$sid" ]; then break; fi
         wait_for_reset "$resets" || break ;;
       transient*)
@@ -805,7 +809,7 @@ cmd_work() {
     command -v codex >/dev/null || { log "missing CLI: codex"; return 69; }
   fi
   declare -A running=()
-  local st n next_provider=claude provider
+  local st n next_provider=claude provider quota_waiting=0
   while :; do
     git -C "$REPO_ROOT" fetch -q origin
     for n in "${!running[@]}"; do
@@ -814,22 +818,48 @@ cmd_work() {
     st="$(py "$LOOP_DIR/issues.py" status)"
     replan="$(py -c 'import json,sys; print(json.loads(sys.argv[1])["loop:replan"])' "$st")"
     if [ "$replan" -gt 0 ]; then
+      if [ "$quota_waiting" != 0 ]; then
+        rm -f "$STATE_DIR/status/main.json"
+        quota_waiting=0
+      fi
       if [ "${#running[@]}" -eq 0 ]; then plan_cycle replan.md replan || return 1; fi
     else
-      while [ "${#running[@]}" -lt "$PARALLELISM" ] && ! limited_now; do
+      while [ "${#running[@]}" -lt "$PARALLELISM" ]; do
+        if [ "$work_provider" != mixed ] && limited_now; then break; fi
         n="$(py "$LOOP_DIR/issues.py" ready "${!running[@]}" | head -n1)"
         [ -n "$n" ] || break
-        gh issue edit "$n" --add-label loop:in-progress >/dev/null
         provider=$work_provider
         if [ "$provider" = mixed ]; then
-          provider=$next_provider
+          provider="$(py "$LOOP_DIR/worker_quota.py" "$STATE_DIR" "$next_provider")" || return 1
+          case "$provider" in
+            claude|codex) ;;
+            *)
+              if [ "$quota_waiting" != "$provider" ]; then
+                log "Claude and Codex usage limits: waiting for the next reset before assigning #$n"
+                set_status waiting-limit "Claude・Codex: $(date -d "@$provider" '+%m/%d %H:%M') まで"
+                quota_waiting=$provider
+              fi
+              break ;;
+          esac
+          if [ "$quota_waiting" != 0 ]; then
+            rm -f "$STATE_DIR/status/main.json"
+            quota_waiting=0
+          fi
+          if [ "$provider" != "$next_provider" ]; then
+            log "#$n: using $provider because $next_provider is near or at its usage limit"
+          fi
           if [ "$provider" = claude ]; then next_provider=codex; else next_provider=claude; fi
         fi
+        gh issue edit "$n" --add-label loop:in-progress >/dev/null
         run_issue "$n" "$provider" &
         running[$n]=$!
       done
     fi
     if [ "${#running[@]}" -eq 0 ] && [ "$replan" -eq 0 ]; then
+      if [ "$quota_waiting" != 0 ] && [ -n "${n:-}" ]; then
+        sleep "$POLL_SECONDS"
+        continue
+      fi
       if [ "$(py -c 'import json,sys; print(json.loads(sys.argv[1])["open"])' "$st")" -eq 0 ]; then
         log "all loop issues are closed"
         remove_worktree "$WT_DIR/plan"

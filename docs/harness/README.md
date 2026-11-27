@@ -354,6 +354,8 @@ claude.ai のサブスクリプションで動かすと、5時間ごとや週ご
 
 `scripts/loop/ctl.sh start work codex` は、同じ Issue の実装もレビューも Codex で行う。レビューは新しいセッションを使う。`work claude`（引数を省略した場合も同じ）は両方に Claude を使う。`work mixed` は1つのまとめ役の中で、着手順に Claude、Codex と交互に Issue を割り当てる。並列数は従来どおり config の PARALLELISM に従う。Issue の二重取得を避けるため、同じリポジトリでまとめ役を複数起動しない。
 
+`work mixed` では、新しい Issue を割り当てるときに CLI が最後に報告した有効な利用枠を確認する。予定していた担当の 5 時間枠や週次枠が 90% を超えていれば、もう一方に割り当てる。両方とも上限に近い場合は、どちらかの枠が明けてから新しい Issue に着手する。利用率を取得できない場合は、ループが記録した利用上限を使い、その記録もなければ通常の順番で割り当てる。割り当て済みの Issue は同じ担当が続ける。作業中に利用上限に達した場合は、再開可能なら同じセッションの再開を待つ。
+
 Claude は実装・レビューともに `claude-opus-5-5` を使い、実装の推論量は `medium` とする。Codex の実装は `CODEX_IMPLEMENTATION_MODEL`(既定は `gpt-6.2-sol`)の `medium`、レビューは `CODEX_REVIEW_MODEL`(既定は `gpt-6.2-astra`)を使う。どちらのワーカーも実装役が差分と影響範囲を見て、認可・公開範囲・並行更新に関わる場合はレビューを config の `REVIEW_LEVEL`(既定は `high`)で、通常は `medium` で行う。分類が欠けるか不正なら `REVIEW_LEVEL` を使う。実行ログの先頭には CLI、モデル、推論量を記録する。
 
 Claude の推論量は、bootstrap の各段階とカナリアの仕様・適用・判定が `medium`(config の `BOOTSTRAP_EFFORT`)、計画と批評が `high`(`EFFORT`)とする。
