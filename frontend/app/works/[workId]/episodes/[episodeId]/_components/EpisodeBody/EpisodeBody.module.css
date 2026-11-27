@@ -11,6 +11,15 @@
   overflow-wrap: anywhere;
 }
 
+.body ruby {
+  ruby-align: center;
+  ruby-position: over;
+}
+
+.body rt {
+  font-size: 0.5em;
+}
+
 /* pre-wrap だけでは末尾の改行に続く空行が高さを持たない。 */
 .body::after {
   content: "";
