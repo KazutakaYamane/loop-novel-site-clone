@@ -1,0 +1,118 @@
+/* 値は docs/kakuyomu-reference/works.md の「小説の設定」から採った */
+.form {
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 165px minmax(0, 1fr);
+  gap: 0 0;
+  padding: 24px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 25.2px;
+}
+
+.field {
+  min-width: 0;
+}
+
+.help {
+  margin-bottom: 7px;
+  color: #444;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.input,
+.textarea {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 2px solid #ccc;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 16px;
+  line-height: 18px;
+}
+
+.input[aria-invalid="true"],
+.textarea[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.textarea {
+  height: 160px;
+  resize: vertical;
+}
+
+.counter {
+  padding: 5px 0;
+  color: #999;
+  font-size: 14px;
+  line-height: 21px;
+  text-align: right;
+}
+
+.over {
+  color: var(--color-error);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.save {
+  padding: 6px 10px;
+  border: 1px solid #0990cc;
+  border-radius: 3px;
+  color: var(--color-surface);
+  background: var(--color-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.cancel {
+  font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .label {
+    font-size: 13px;
+  }
+
+  .help {
+    margin-bottom: 12px;
+    color: var(--color-text-weak);
+    font-size: 12px;
+    line-height: 16.8px;
+  }
+
+  .counter {
+    font-size: 12px;
+  }
+}

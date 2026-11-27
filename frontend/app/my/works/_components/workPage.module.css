@@ -1,0 +1,62 @@
+/* 値は docs/kakuyomu-reference/works.md の「小説の設定」から採った */
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: 24px var(--layout-side-padding);
+}
+
+.breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  color: #999;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.breadcrumb a:not(:first-child)::before {
+  content: "›";
+  margin-right: 8px;
+}
+
+.title {
+  margin-bottom: 16px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .main {
+    padding: 16px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+}
+
+.notice {
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.back {
+  color: var(--color-accent);
+  font-size: 14px;
+}
+
+.edit {
+  display: inline-block;
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: #ddd;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 12px;
+}

@@ -1,0 +1,241 @@
+/* 値は docs/kakuyomu-reference/works.md の「小説の設定」から採った */
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.head {
+  display: flex;
+  gap: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.status {
+  display: flex;
+  flex: none;
+  border: 0;
+}
+
+.statusOption {
+  position: relative;
+  display: block;
+}
+
+.statusLabel {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 68px;
+  height: 60px;
+  padding-bottom: 8px;
+  border: 1px solid #eae9e8;
+  color: var(--color-text-weak);
+  background: #f7f6f5;
+  font-size: 14px;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.choiceInput {
+  position: absolute;
+  opacity: 0;
+}
+
+.choiceInput:checked + .statusLabel {
+  border-color: #0990cc;
+  border-radius: 3px;
+  color: var(--color-surface);
+  background: var(--color-accent);
+  font-weight: 700;
+}
+
+.choiceInput:focus-visible + .statusLabel,
+.choiceInput:focus-visible + .choiceLabel {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.titleField {
+  flex: 1;
+  min-width: 0;
+}
+
+.titleLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.titleInput {
+  display: block;
+  width: 100%;
+  height: 60px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 30px;
+  line-height: 60px;
+}
+
+.titleInput[aria-invalid="true"] {
+  outline: 2px solid var(--color-error);
+}
+
+.group {
+  display: grid;
+  grid-template-columns: 165px minmax(0, 1fr);
+  padding-top: 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.groupTitle {
+  font-size: 16.8px;
+  font-weight: 700;
+  line-height: 30.24px;
+}
+
+.groupBody {
+  min-width: 0;
+  padding-bottom: 24px;
+  border: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 165px minmax(0, 1fr);
+  padding: 0 0 24px;
+  border: 0;
+}
+
+.row + .row {
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* fieldset の legend は grid の子にならないので、左の列に置き直す */
+.row > legend {
+  float: left;
+  width: 165px;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice {
+  position: relative;
+  display: block;
+}
+
+.choiceLabel {
+  display: block;
+  padding: 7px 10.5px;
+  border: 2px solid transparent;
+  border-radius: 3px;
+  color: var(--color-text);
+  background: #eae9e8;
+  font-size: 14px;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.choiceInput:checked + .choiceLabel {
+  border-color: var(--color-text-weak);
+  color: var(--color-surface);
+  background: var(--color-text-weak);
+}
+
+.choiceInput:checked + .choiceLabel::before {
+  content: "✓ ";
+}
+
+.tags {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 767px) {
+  .head {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .status {
+    width: 100%;
+  }
+
+  .statusOption {
+    flex: 1;
+  }
+
+  .statusLabel {
+    align-items: center;
+    width: 100%;
+    height: 44px;
+    padding-bottom: 0;
+    font-size: 13px;
+  }
+
+  .titleLabel {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .titleInput {
+    height: 36px;
+    padding: 7px 10px;
+    border: 2px solid #ccc;
+    font-size: 16px;
+    line-height: 18px;
+  }
+
+  .group {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .groupTitle {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 13px;
+    line-height: 13px;
+    text-align: center;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .row > legend {
+    width: 100%;
+  }
+
+  .choiceLabel {
+    padding: 6.5px 9.75px;
+    font-size: 13px;
+    line-height: 13px;
+  }
+
+  .tags {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

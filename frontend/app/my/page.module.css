@@ -12,8 +12,49 @@
   line-height: 1.4;
 }
 
+/* 値は docs/kakuyomu-reference/works.md の「小説一覧」から採った */
+.works {
+  margin-top: 24px;
+}
+
+.worksHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.worksTitle {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.newWork {
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid #0990cc;
+  border-radius: 3px;
+  color: var(--color-surface);
+  background: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 12px;
+}
+
 @media (max-width: 767px) {
   .main {
     padding: 16px;
+  }
+
+  .worksTitle {
+    font-size: 18px;
+  }
+
+  .newWork {
+    border-color: #bbb;
+    color: var(--color-text);
+    background: #ddd;
   }
 }
