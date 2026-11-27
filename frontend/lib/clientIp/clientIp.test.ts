@@ -14,6 +14,13 @@ describe("clientIp @AC-F2-7", () => {
     expect(clientIp(headers("198.51.100.1, 10.0.0.2,203.0.113.7"))).toBe("203.0.113.7");
   });
 
+  test("accepts IPv4 addresses up to 255 in each part", () => {
+    expect(clientIp(headers("255.255.255.255"))).toBe("255.255.255.255");
+    expect(clientIp(headers("0.0.0.0"))).toBe("0.0.0.0");
+    expect(clientIp(headers("203.0.113.249"))).toBe("203.0.113.249");
+    expect(clientIp(headers("203.0.113.199"))).toBe("203.0.113.199");
+  });
+
   test("accepts IPv6 addresses", () => {
     expect(clientIp(headers("198.51.100.1, 2001:db8:0:0:1:2:3:4"))).toBe("2001:db8:0:0:1:2:3:4");
     expect(clientIp(headers("::ffff:172.21.0.6"))).toBe("::ffff:172.21.0.6");
@@ -31,5 +38,11 @@ describe("clientIp @AC-F2-7", () => {
     expect(clientIp(headers("999.1.1.1"))).toBeNull();
     expect(clientIp(headers("01.2.3.4"))).toBeNull();
     expect(clientIp(headers("2001:db8::zz"))).toBeNull();
+    expect(clientIp(headers("203.0.113.256"))).toBeNull();
+    expect(clientIp(headers("203.0.113"))).toBeNull();
+    expect(clientIp(headers("1234"))).toBeNull();
+    expect(clientIp(headers("x::1"))).toBeNull();
+    expect(clientIp(headers("::1]/x"))).toBeNull();
+    expect(clientIp(headers("::1]"))).toBeNull();
   });
 });
