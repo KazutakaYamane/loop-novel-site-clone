@@ -12,7 +12,7 @@ const resultByStatus: Partial<Record<number, DemoStartResult>> = {
 };
 
 export async function startDemo(role: DemoRole): Promise<DemoStartResult> {
-  const token = await fetchCsrfToken();
+  const token = await fetchCsrfToken({ allowExpiredSession: true });
   if (token === null) {
     return false;
   }

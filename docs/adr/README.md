@@ -36,3 +36,7 @@
 | [0028](0028-new-arrivals-and-publish-visibility.md) | トップの新着の並びと件数、公開の即時反映 | 採用 |
 | [0029](0029-mobile-footer-line-height.md) | スマートフォンのフッターの行の高さを整数にする | 採用 |
 | [0030](0030-aozora-seed-data.md) | 青空文庫のシードデータの持ち方と投入 | 採用 |
+| [0031](0031-scheduled-demo-reset.md) | シードの URL を保ってデモデータを毎日消す | 採用 |
+| [0032](0032-restart-demo-notice.md) | 期限切れのログインにデモの再開を案内する | 採用 |
+| [0033](0033-server-rendered-session-refresh.md) | 画面移動後のデモセッションはサーバー描画で確認する | 採用 |
+| [0034](0034-episode-editor-hydration.md) | 話の執筆画面はハイドレーション後に操作を受け付ける | 採用 |

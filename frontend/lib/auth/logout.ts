@@ -1,4 +1,5 @@
 import { fetchCsrfToken } from "@/lib/api/csrfToken";
+import { reportExpiredDemoSession } from "@/lib/api/sessionExpired";
 
 // Laravel のセッションを捨てる。成功したら true
 export async function logOut(): Promise<boolean> {
@@ -11,5 +12,5 @@ export async function logOut(): Promise<boolean> {
     credentials: "same-origin",
     headers: { Accept: "application/json", "X-CSRF-TOKEN": token },
   });
-  return response.status === 204;
+  return !reportExpiredDemoSession(response) && response.status === 204;
 }

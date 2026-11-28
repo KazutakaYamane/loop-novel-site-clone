@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { RestartDemoNotice } from "./_components/RestartDemoNotice/RestartDemoNotice";
 import { CurrentHeaderActions } from "./_components/SiteHeader/CurrentHeaderActions";
 import { SiteFooter } from "./_components/SiteFooter/SiteFooter";
 import { SiteHeader } from "./_components/SiteHeader/SiteHeader";
@@ -22,6 +23,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </Suspense>
           }
         />
+        <Suspense fallback={null}>
+          <RestartDemoNotice />
+        </Suspense>
         {children}
         <SiteFooter />
       </body>

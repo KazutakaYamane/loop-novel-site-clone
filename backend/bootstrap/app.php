@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ReportExpiredDemoSession;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
             StartSession::class,
+            ReportExpiredDemoSession::class,
             PreventRequestForgery::class,
         ]);
         // 話の本文は書いたとおりに残す。前後を削ると、段落の頭の全角スペースや末尾の空行が消える

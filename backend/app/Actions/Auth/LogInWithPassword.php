@@ -15,6 +15,7 @@ final readonly class LogInWithPassword
     public function __construct(
         private AuthFactory $auth,
         private Session $session,
+        private PreviousLoginCookie $previousLoginCookie,
     ) {}
 
     public function handle(string $email, string $password): ?User
@@ -27,6 +28,8 @@ final readonly class LogInWithPassword
         // セッション固定攻撃を防ぐため、ログインしたらセッション ID と CSRF トークンを作り直す
         $this->session->regenerate();
         $this->session->regenerateToken();
+
+        $this->previousLoginCookie->remember();
 
         $user = $guard->user();
 

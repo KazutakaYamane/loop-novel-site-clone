@@ -1,6 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { LayoutLink } from "../LayoutLink/LayoutLink";
 import styles from "./SiteHeader.module.css";
 
 type Props = { actions?: ReactNode };
@@ -10,7 +10,7 @@ export function SiteHeader({ actions }: Props) {
     <header className={styles.header}>
       <div className={styles.line1}>
         <div className={styles.inner}>
-          <Link href="/" className={styles.logo}>
+          <LayoutLink href="/" className={styles.logo}>
             <Image
               className={styles.logoImage}
               src="/images/logo.svg"
@@ -19,7 +19,7 @@ export function SiteHeader({ actions }: Props) {
               height={25}
               priority
             />
-          </Link>
+          </LayoutLink>
           {/* ログインの導線とログイン中の表示を置く。既存のヘッダーの見た目の比較はこの領域を隠して撮る */}
           <div className={styles.actions} data-testid="header-actions">
             {actions}
@@ -29,10 +29,10 @@ export function SiteHeader({ actions }: Props) {
       <nav className={styles.nav} aria-label="サイト内の移動">
         <ul className={styles.navList}>
           <li className={styles.navItem}>
-            <Link href="/" className={styles.navLink}>
+            <LayoutLink href="/" className={styles.navLink}>
               <HomeIcon />
               <span className={styles.navTitle}>ホーム</span>
-            </Link>
+            </LayoutLink>
           </li>
         </ul>
       </nav>

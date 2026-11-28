@@ -1,4 +1,5 @@
 import { fetchCsrfToken } from "@/lib/api/csrfToken";
+import { reportExpiredDemoSession } from "@/lib/api/sessionExpired";
 import { isEpisodeRateLimited } from "./episodeRateLimit";
 import type { Episode } from "./myEpisodes";
 
@@ -29,6 +30,9 @@ async function send(path: string, method: "POST" | "PUT", input: EpisodeInput): 
     headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": token },
     body: JSON.stringify(input),
   });
+  if (reportExpiredDemoSession(response)) {
+    return { ok: false, errors: RETRY };
+  }
   if (response.ok) {
     const episode: Episode = await response.json();
     return { ok: true, episode };

@@ -83,6 +83,16 @@ docker compose exec app php artisan aozora:convert   # source/ を変換して w
 
 変換は、ルビ(`《》`、`｜`)をそのまま F5 の記法として残し、`［＃「…」に傍点］` を傍点(`《《…》》`)に、大見出し・中見出しを話の区切りに、外字の注記を Unicode の文字にして、そのほかの注記(`［＃…］`)を消す。符号位置の分からない外字があると止まるので、作品を選び直す。作品は作者・翻訳者とも没後 70 年を過ぎたもの(図書カードの著作権フラグが「なし」)から、短いものを選ぶ。
 
+## 日次リセット
+
+Compose の `scheduler` が毎日 04:00 (日本時間) にデモをシードの状態へ戻す。`scripts/worktree-setup.sh` で用意した開発環境で日次リセットを使う場合は、`docker compose up -d scheduler` で起動する。
+
+時刻を待たずにリセットするには、対象の worktree で次を実行する。デモの利用者・作品・話、すべてのログイン状態、レート制限を含む一時データが消える。シードの作品・話は同じ URL で開ける。
+
+```bash
+docker compose exec app php artisan app:reset --isolated=1
+```
+
 ## チェックを手元で動かす
 
 CI と同じものを手元で動かせる。CI のジョブの名前と中身は [docs/harness/README.md](docs/harness/README.md) の「CI のジョブ」にある。
