@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useState, useSyncExternalStore } from "react";
 import { createEpisode, publishEpisode, saveEpisode, type EpisodeSaveResult } from "@/lib/api/episodeMutations";
 import type { Episode } from "@/lib/api/myEpisodes";
 import { navigateTo } from "@/lib/navigation";
@@ -10,15 +10,20 @@ import styles from "./EpisodeForm.module.css";
 
 type Props = { workId: number; episode?: Episode };
 
+// 描画先で値が決まり、購読する変更通知は無い。
+const subscribeToHydration = () => () => {};
+
 // 話の執筆の画面のフォーム。新しい話は下書きとして作り、続きは作った話の執筆の画面で書く(AC-F4-1、AC-F4-2)。
 // 公開はフォームの内容を保存して公開する(AC-F4-6)
 export function EpisodeForm({ workId, episode }: Props) {
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [title, setTitle] = useState(episode?.title ?? "");
   const [body, setBody] = useState(episode?.body ?? "");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [sending, setSending] = useState(false);
   const [saved, setSaved] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
+  const submitDisabled = !hydrated || sending;
 
   async function submit(send: () => Promise<EpisodeSaveResult>, onSuccess: (saved: Episode) => void) {
     setSending(true);
@@ -69,11 +74,11 @@ export function EpisodeForm({ workId, episode }: Props) {
         <p role="status" className={styles.saved}>
           {saved ? "下書きを保存しました。" : ""}
         </p>
-        <button className={styles.draft} type="submit" disabled={sending}>
+        <button className={styles.draft} type="submit" disabled={submitDisabled}>
           下書き保存
         </button>
         {episode !== undefined && (
-          <button className={styles.publish} type="button" disabled={sending} onClick={() => handlePublish(episode.id)}>
+          <button className={styles.publish} type="button" disabled={submitDisabled} onClick={() => handlePublish(episode.id)}>
             公開する
           </button>
         )}
@@ -89,6 +94,7 @@ export function EpisodeForm({ workId, episode }: Props) {
         type="text"
         placeholder="エピソードタイトルを入力…"
         value={title}
+        disabled={!hydrated}
         aria-invalid={errors.title !== undefined}
         aria-describedby="episode-title-error"
         onChange={(event) => edit(() => setTitle(event.target.value))}
@@ -102,6 +108,7 @@ export function EpisodeForm({ workId, episode }: Props) {
         className={styles.body}
         placeholder="本文を入力…"
         value={body}
+        disabled={!hydrated}
         aria-invalid={errors.body !== undefined}
         aria-describedby="episode-body-error"
         onChange={(event) => edit(() => setBody(event.target.value))}

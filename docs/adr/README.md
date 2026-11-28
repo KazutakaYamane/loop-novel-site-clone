@@ -39,3 +39,4 @@
 | [0031](0031-scheduled-demo-reset.md) | シードの URL を保ってデモデータを毎日消す | 採用 |
 | [0032](0032-restart-demo-notice.md) | 期限切れのログインにデモの再開を案内する | 採用 |
 | [0033](0033-server-rendered-session-refresh.md) | 画面移動後のデモセッションはサーバー描画で確認する | 採用 |
+| [0034](0034-episode-editor-hydration.md) | 話の執筆画面はハイドレーション後に操作を受け付ける | 採用 |
