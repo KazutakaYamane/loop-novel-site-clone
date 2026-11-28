@@ -10,6 +10,7 @@
   claude_log.py metrics <log> <run-name>  metrics 用の1行の JSON を出す
 """
 
+from datetime import datetime, timedelta
 import json
 import os
 import re
@@ -47,6 +48,33 @@ def result_line(res: dict | None) -> str | None:
     return lines[-1] if lines else None
 
 
+MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun",
+                                      "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+RETRY_AT = re.compile(r"try again at (?:(?P<mon>[A-Za-z]{3})[a-z]*\.? (?P<day>\d{1,2})(?:st|nd|rd|th)?,?"
+                      r"(?: (?P<year>\d{4}))?,? )?(?P<h>\d{1,2}):(?P<m>\d{2}) ?(?P<ap>[AP]M)", re.I)
+RETRY_IN = re.compile(r"try again in ((?:\d+ (?:days?|hours?|minutes?|seconds?)[ ,]*(?:and )?)+)", re.I)
+
+
+def retry_time(text: str, now: datetime) -> int | None:
+    """Codex の上限のメッセージが示す再開の時刻(epoch)。時刻はこの端末の地方時で書かれる"""
+    if m := RETRY_AT.search(text):
+        hour = int(m["h"]) % 12 + (12 if m["ap"].upper() == "PM" else 0)
+        at = now.replace(hour=hour, minute=int(m["m"]), second=0, microsecond=0)
+        if m["mon"]:
+            at = at.replace(year=int(m["year"] or now.year), month=MONTHS[m["mon"].lower()], day=int(m["day"]))
+            if not m["year"] and at < now - timedelta(days=1):
+                at = at.replace(year=at.year + 1)
+        elif at <= now:
+            at += timedelta(days=1)
+        return int(at.timestamp())
+    if m := RETRY_IN.search(text):
+        delta = timedelta()
+        for n, unit in re.findall(r"(\d+) (day|hour|minute|second)", m[1], re.I):
+            delta += timedelta(**{unit.lower() + "s": int(n)})
+        return int((now.replace(microsecond=0) + delta).timestamp())
+    return None
+
+
 def classify(path: Path, stderr: Path | None) -> str:
     evs = events(path)
     session = next((e["session_id"] for e in reversed(evs) if e.get("session_id")), "")
@@ -77,8 +105,11 @@ def classify(path: Path, stderr: Path | None) -> str:
         if not resets:
             m = re.search(r"\|(\d{10})\b", text)
             resets = int(m.group(1)) if m else None
+        now = int(os.environ.get("LOOP_NOW") or time.time())
         if not resets:
-            resets = int(time.time()) + int(os.environ.get("RATE_LIMIT_FALLBACK_WAIT_SECONDS", "1800"))
+            resets = retry_time(text, datetime.fromtimestamp(now).astimezone())
+        if not resets:
+            resets = now + int(os.environ.get("RATE_LIMIT_FALLBACK_WAIT_SECONDS", "1800"))
         return f"limit {int(resets)} {session}".rstrip()
     if TRANSIENT_TEXT.search(text):
         return f"transient {session}".rstrip()
